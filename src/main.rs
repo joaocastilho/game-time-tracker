@@ -4,6 +4,7 @@ pub mod process;
 pub mod store;
 pub mod tracker;
 pub mod tray;
+pub mod ui;
 
 use clap::{Parser, Subcommand};
 use log::{error, info};
@@ -75,6 +76,7 @@ fn main() -> anyhow::Result<()> {
             let tray_channel = tray_icon::TrayIconEvent::receiver();
 
             let mut last_active_count = 0;
+            let is_ui_open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             event_loop.run(move |_event, _, control_flow| {
                 *control_flow = tao::event_loop::ControlFlow::WaitUntil(
@@ -102,7 +104,7 @@ fn main() -> anyhow::Result<()> {
                             error!("Failed to open sessions.json: {}", e);
                         }
                     } else if event.id == manage_games_item.id() {
-                        info!("Manage Games clicked - functionality not yet implemented.");
+                        ui::spawn_ui(is_ui_open.clone());
                     }
                 }
 
