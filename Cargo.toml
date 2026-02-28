@@ -20,3 +20,5 @@ tao = "0.30"
 thiserror = "2.0.18"
 tray-icon = "0.19"
 winreg = "0.55"
+winit = "0.30"
+
