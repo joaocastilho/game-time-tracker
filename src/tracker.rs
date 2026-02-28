@@ -5,23 +5,23 @@ use crate::store::{self, StoreError};
 use chrono::Utc;
 use log::info;
 use std::collections::HashMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::thread::sleep;
 use std::time::Duration;
 
 pub struct AppTracker {
     monitor: ProcessMonitor,
-}
-
-impl Default for AppTracker {
-    fn default() -> Self {
-        Self::new()
-    }
+    active_count: Arc<AtomicUsize>,
 }
 
 impl AppTracker {
-    pub fn new() -> Self {
+    pub fn new(active_count: Arc<AtomicUsize>) -> Self {
         Self {
             monitor: ProcessMonitor::new(),
+            active_count,
         }
     }
 
@@ -96,6 +96,8 @@ impl AppTracker {
                         },
                     );
                     state_changed = true;
+                    self.active_count
+                        .store(state.active_sessions.len(), Ordering::Relaxed);
                 } else if !is_running && is_active {
                     info!("Ended session for game: {}", game.name);
                     let mut session = state.active_sessions.remove(&game_id).unwrap();
@@ -113,6 +115,8 @@ impl AppTracker {
 
                     sessions_changed = true;
                     state_changed = true;
+                    self.active_count
+                        .store(state.active_sessions.len(), Ordering::Relaxed);
                 }
             }
 
@@ -139,7 +143,8 @@ mod tests {
 
     #[test]
     fn test_app_tracker_initialization() {
-        let _tracker = AppTracker::new();
+        let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let _tracker = AppTracker::new(active_count);
         assert!(true);
     }
 }
