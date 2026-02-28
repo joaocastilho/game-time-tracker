@@ -6,10 +6,14 @@ pub mod tracker;
 pub mod tray;
 pub mod ui;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::{error, info};
+use std::env;
 use std::sync::atomic::Ordering;
 use tracker::AppTracker;
+use winreg::RegKey;
+use winreg::enums::*;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -33,11 +37,33 @@ fn main() -> anyhow::Result<()> {
 
     match &cli.command {
         Some(Commands::Install) => {
-            info!("Install command stubbed out.");
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            let path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
+            let key = hkcu
+                .open_subkey_with_flags(path, KEY_SET_VALUE)
+                .context("Failed to open registry key")?;
+            let exe_path = env::current_exe().context("Failed to get current executable path")?;
+            let exe_path_str = exe_path
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid executable path"))?;
+            key.set_value("GameTimeTracker", &exe_path_str)
+                .context("Failed to set registry value")?;
+            info!("Successfully installed auto-start registry key.");
             Ok(())
         }
         Some(Commands::Uninstall) => {
-            info!("Uninstall command stubbed out.");
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            let path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
+            let key = hkcu
+                .open_subkey_with_flags(path, KEY_SET_VALUE)
+                .context("Failed to open registry key")?;
+            match key.delete_value("GameTimeTracker") {
+                Ok(_) => info!("Successfully uninstalled auto-start registry key."),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    info!("Auto-start registry key not found, nothing to uninstall.")
+                }
+                Err(e) => return Err(e).context("Failed to delete registry value"),
+            }
             Ok(())
         }
         None => {
@@ -57,10 +83,9 @@ fn main() -> anyhow::Result<()> {
                 &open_data_item,
                 &muda::PredefinedMenuItem::separator(),
                 &quit_item,
-            ])
-            .unwrap();
+            ])?;
 
-            let tray_icon = tray::setup_tray(&menu).expect("Failed to setup tray icon");
+            let tray_icon = tray::setup_tray(&menu).context("Failed to setup tray icon")?;
 
             let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 

@@ -100,7 +100,9 @@ impl AppTracker {
                         .store(state.active_sessions.len(), Ordering::Relaxed);
                 } else if !is_running && is_active {
                     info!("Ended session for game: {}", game.name);
-                    let mut session = state.active_sessions.remove(&game_id).unwrap();
+                    let Some(mut session) = state.active_sessions.remove(&game_id) else {
+                        continue;
+                    };
                     let end_time = Utc::now();
                     session.end = Some(end_time);
                     session.duration_secs = (end_time - session.start).num_seconds().max(0) as u64;
