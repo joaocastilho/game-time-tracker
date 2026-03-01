@@ -1,4 +1,5 @@
 use crate::config::data_dir;
+use crate::icon;
 use crate::models::{Game, Session, State};
 use crate::store;
 use eframe::egui;
@@ -182,22 +183,28 @@ impl eframe::App for GameManagerApp {
 }
 
 pub fn spawn_ui(is_open: Arc<AtomicBool>) {
-    // Only spawn if not already open
     if is_open.swap(true, Ordering::SeqCst) {
         return;
     }
 
     let is_open_clone = Arc::clone(&is_open);
 
-    // Spawn thread so eframe doesn't block the tray menu
+    let icon_rgba = icon::icon_rgba();
+    let icon = egui::IconData {
+        rgba: icon_rgba,
+        width: 32,
+        height: 32,
+    };
+
     std::thread::spawn(move || {
         let mut options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([500.0, 600.0])
-                .with_min_inner_size([400.0, 400.0]),
+                .with_min_inner_size([400.0, 400.0])
+                .with_icon(icon.clone()),
             ..Default::default()
         };
-        
+
         #[cfg(windows)]
         {
             options.event_loop_builder = Some(Box::new(|builder| {
@@ -214,7 +221,6 @@ pub fn spawn_ui(is_open: Arc<AtomicBool>) {
 
         if let Err(e) = result {
             log::error!("eframe window error: {}", e);
-            // reset if failed to start
             is_open.store(false, Ordering::SeqCst);
         }
     });

@@ -3,6 +3,13 @@ name = "game-time-tracker"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "gtt"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
+
 [dependencies]
 anyhow = "1.0.102"
 chrono = { version = "0.4.44", features = ["serde"] }
@@ -21,4 +28,7 @@ thiserror = "2.0.18"
 tray-icon = "0.19"
 winreg = "0.55"
 winit = "0.30"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
+[build-dependencies]
+winres = "0.1.12"

@@ -1,4 +1,7 @@
+#![windows_subsystem = "windows"]
+
 pub mod config;
+pub mod icon;
 pub mod models;
 pub mod process;
 pub mod store;
