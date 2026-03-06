@@ -16,7 +16,6 @@ pub struct GameManagerApp {
     state: State,
 
     // Add Game fields
-    new_game_id: String,
     new_game_name: String,
     new_game_exec: String,
     add_error: Option<String>,
@@ -30,7 +29,6 @@ impl GameManagerApp {
             games,
             sessions,
             state,
-            new_game_id: String::new(),
             new_game_name: String::new(),
             new_game_exec: String::new(),
             add_error: None,
@@ -71,6 +69,8 @@ impl GameManagerApp {
 
 impl eframe::App for GameManagerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.reload_state();
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Game Time Tracker - Management");
             ui.separator();
@@ -135,10 +135,6 @@ impl eframe::App for GameManagerApp {
             ui.heading("Add Game");
 
             ui.horizontal(|ui| {
-                ui.label("ID:");
-                ui.text_edit_singleline(&mut self.new_game_id);
-            });
-            ui.horizontal(|ui| {
                 ui.label("Name:");
                 ui.text_edit_singleline(&mut self.new_game_name);
             });
@@ -152,21 +148,25 @@ impl eframe::App for GameManagerApp {
             }
 
             if ui.button("➕ Add Game").clicked() {
-                if self.new_game_id.trim().is_empty()
-                    || self.new_game_name.trim().is_empty()
-                    || self.new_game_exec.trim().is_empty()
-                {
+                let game_id = self
+                    .new_game_name
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() { c } else { '-' })
+                    .collect::<String>();
+
+                if self.new_game_name.trim().is_empty() || self.new_game_exec.trim().is_empty() {
                     self.add_error = Some("All fields must be filled out.".to_string());
-                } else if self.games.iter().any(|g| g.id == self.new_game_id) {
-                    self.add_error = Some("Game ID already exists.".to_string());
+                } else if self.games.iter().any(|g| g.id == game_id) {
+                    self.add_error = Some("Game already exists.".to_string());
                 } else {
                     self.games.push(Game {
-                        id: self.new_game_id.trim().to_string(),
+                        id: game_id,
                         name: self.new_game_name.trim().to_string(),
                         executable: self.new_game_exec.trim().to_string(),
                     });
                     self.save_games();
-                    self.new_game_id.clear();
                     self.new_game_name.clear();
                     self.new_game_exec.clear();
                     self.add_error = None;
@@ -197,21 +197,13 @@ pub fn spawn_ui(is_open: Arc<AtomicBool>) {
     };
 
     std::thread::spawn(move || {
-        let mut options = eframe::NativeOptions {
+        let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([500.0, 600.0])
                 .with_min_inner_size([400.0, 400.0])
                 .with_icon(icon.clone()),
             ..Default::default()
         };
-
-        #[cfg(windows)]
-        {
-            options.event_loop_builder = Some(Box::new(|builder| {
-                use winit::platform::windows::EventLoopBuilderExtWindows;
-                builder.with_any_thread(true);
-            }));
-        }
 
         let result = eframe::run_native(
             "Game Time Tracker",

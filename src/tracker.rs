@@ -15,13 +15,18 @@ use std::time::Duration;
 pub struct AppTracker {
     monitor: ProcessMonitor,
     active_count: Arc<AtomicUsize>,
+    should_stop: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppTracker {
-    pub fn new(active_count: Arc<AtomicUsize>) -> Self {
+    pub fn new(
+        active_count: Arc<AtomicUsize>,
+        should_stop: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
         Self {
             monitor: ProcessMonitor::new(),
             active_count,
+            should_stop,
         }
     }
 
@@ -73,6 +78,11 @@ impl AppTracker {
         let mut state: State = store::load(&state_path)?.unwrap_or_default();
 
         loop {
+            if self.should_stop.load(Ordering::SeqCst) {
+                info!("Shutdown signal received, stopping tracker");
+                break Ok(());
+            }
+
             let games: Vec<Game> = store::load(&games_path)?.unwrap_or_default();
 
             let mut state_changed = false;
@@ -146,7 +156,8 @@ mod tests {
     #[test]
     fn test_app_tracker_initialization() {
         let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let _tracker = AppTracker::new(active_count);
+        let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let _tracker = AppTracker::new(active_count, should_stop);
         assert!(true);
     }
 }

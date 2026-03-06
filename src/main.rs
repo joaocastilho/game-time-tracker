@@ -36,6 +36,21 @@ enum Commands {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
+    std::panic::set_hook(Box::new(|panic_info| {
+        let msg = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic".to_string()
+        };
+        let location = panic_info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        error!("PANIC at {}: {}", location, msg);
+    }));
+
     let cli = Cli::parse();
 
     match &cli.command {
@@ -91,13 +106,16 @@ fn main() -> anyhow::Result<()> {
             let tray_icon = tray::setup_tray(&menu).context("Failed to setup tray icon")?;
 
             let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             let active_count_clone = active_count.clone();
+            let should_stop_clone = should_stop.clone();
             std::thread::spawn(move || {
-                let mut tracker = AppTracker::new(active_count_clone);
+                let mut tracker = AppTracker::new(active_count_clone, should_stop_clone);
                 if let Err(e) = tracker.run() {
                     error!("Tracker stopped due to an error: {}", e);
                 }
+                info!("Tracker thread exiting");
             });
 
             let menu_channel = muda::MenuEvent::receiver();
@@ -107,9 +125,7 @@ fn main() -> anyhow::Result<()> {
             let is_ui_open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             event_loop.run(move |_event, _, control_flow| {
-                *control_flow = tao::event_loop::ControlFlow::WaitUntil(
-                    std::time::Instant::now() + std::time::Duration::from_millis(500),
-                );
+                *control_flow = tao::event_loop::ControlFlow::Poll;
 
                 let current_count = active_count.load(Ordering::Relaxed);
                 if current_count != last_active_count {
@@ -122,6 +138,7 @@ fn main() -> anyhow::Result<()> {
 
                 if let Ok(event) = menu_channel.try_recv() {
                     if event.id == quit_item.id() {
+                        should_stop.store(true, Ordering::SeqCst);
                         *control_flow = tao::event_loop::ControlFlow::Exit;
                     } else if event.id == open_data_item.id() {
                         if let Err(e) = open::that(config::data_dir()) {

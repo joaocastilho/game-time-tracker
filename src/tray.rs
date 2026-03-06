@@ -7,7 +7,10 @@ pub fn setup_tray(menu: &Menu) -> Result<TrayIcon, anyhow::Error> {
     let icon = match Icon::from_resource(1, Some((32, 32))) {
         Ok(embedded_icon) => embedded_icon,
         Err(e) => {
-            log::warn!("Failed to load embedded icon (resource id 1): {}. Falling back to default generated icon.", e);
+            log::warn!(
+                "Failed to load embedded icon (resource id 1): {}. Falling back to default generated icon.",
+                e
+            );
             let width = 32;
             let height = 32;
             let rgba = crate::icon::icon_rgba();
