@@ -51,9 +51,46 @@ pub fn icon_rgba() -> Vec<u8> {
 
 pub fn icon_png() -> Vec<u8> {
     let rgba = icon_rgba();
-    let img = image::RgbaImage::from_raw(32, 32, rgba).unwrap();
+    let img = image::RgbaImage::from_raw(32, 32, rgba)
+        .expect("icon_rgba() always produces exactly 32×32×4 bytes");
     let mut png_bytes = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut png_bytes);
-    img.write_to(&mut cursor, image::ImageFormat::Png).unwrap();
+    img.write_to(&mut cursor, image::ImageFormat::Png)
+        .expect("writing PNG to an in-memory buffer should never fail");
     png_bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_icon_rgba_has_correct_length() {
+        let rgba = icon_rgba();
+        assert_eq!(rgba.len(), 32 * 32 * 4, "expected 32×32×4 = 4096 bytes");
+    }
+
+    #[test]
+    fn test_icon_rgba_alpha_values_are_opaque_or_transparent() {
+        // Every pixel must be fully opaque (255) or fully transparent (0).
+        for (i, chunk) in icon_rgba().chunks_exact(4).enumerate() {
+            assert!(
+                chunk[3] == 0 || chunk[3] == 255,
+                "pixel {i} has unexpected alpha {}",
+                chunk[3]
+            );
+        }
+    }
+
+    #[test]
+    fn test_icon_png_has_valid_magic_header() {
+        let png = icon_png();
+        assert!(!png.is_empty(), "PNG output must not be empty");
+        // Standard PNG signature
+        assert_eq!(
+            &png[..8],
+            &[137u8, 80, 78, 71, 13, 10, 26, 10],
+            "output does not start with the PNG magic header"
+        );
+    }
 }

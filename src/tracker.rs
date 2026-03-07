@@ -16,17 +16,20 @@ pub struct AppTracker {
     monitor: ProcessMonitor,
     active_count: Arc<AtomicUsize>,
     should_stop: Arc<std::sync::atomic::AtomicBool>,
+    stop_rx: std::sync::mpsc::Receiver<()>,
 }
 
 impl AppTracker {
     pub fn new(
         active_count: Arc<AtomicUsize>,
         should_stop: Arc<std::sync::atomic::AtomicBool>,
+        stop_rx: std::sync::mpsc::Receiver<()>,
     ) -> Self {
         Self {
             monitor: ProcessMonitor::new(),
             active_count,
             should_stop,
+            stop_rx,
         }
     }
 
@@ -144,7 +147,19 @@ impl AppTracker {
                 }
             }
 
-            sleep(Duration::from_secs(5));
+            // Interruptible sleep: wakes immediately when a stop signal arrives,
+            // rather than blocking the full 5 seconds on Quit.
+            match self
+                .stop_rx
+                .recv_timeout(Duration::from_secs(5))
+            {
+                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    // Stop signal or sender dropped; will exit at top of next iteration.
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Normal timeout — continue tracking.
+                }
+            }
         }
     }
 }
@@ -152,12 +167,28 @@ impl AppTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    fn make_tracker(
+        should_stop_init: bool,
+    ) -> (
+        AppTracker,
+        std::sync::mpsc::Sender<()>,
+        Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        let active_count = Arc::new(AtomicUsize::new(0));
+        let should_stop = Arc::new(AtomicBool::new(should_stop_init));
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel();
+        let tracker = AppTracker::new(active_count, should_stop.clone(), stop_rx);
+        (tracker, stop_tx, should_stop)
+    }
 
     #[test]
     fn test_app_tracker_initialization() {
-        let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let tracker = AppTracker::new(active_count.clone(), should_stop.clone());
+        let active_count = Arc::new(AtomicUsize::new(0));
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let (_stop_tx, stop_rx) = std::sync::mpsc::channel();
+        let tracker = AppTracker::new(active_count.clone(), should_stop.clone(), stop_rx);
 
         assert_eq!(active_count.load(Ordering::Relaxed), 0);
         assert!(!should_stop.load(Ordering::SeqCst));
@@ -167,23 +198,43 @@ mod tests {
 
     #[test]
     fn test_app_tracker_stops_on_signal() {
-        let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-
-        let mut tracker = AppTracker::new(active_count, should_stop);
-
+        let (mut tracker, _stop_tx, _) = make_tracker(true);
         let result = tracker.run();
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_active_count_tracking() {
-        let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-
-        let _tracker = AppTracker::new(active_count.clone(), should_stop);
+        let active_count = Arc::new(AtomicUsize::new(0));
+        let should_stop = Arc::new(AtomicBool::new(true));
+        let (_stop_tx, stop_rx) = std::sync::mpsc::channel();
+        let _tracker = AppTracker::new(active_count.clone(), should_stop, stop_rx);
 
         active_count.store(3, Ordering::Relaxed);
         assert_eq!(active_count.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn test_tracker_stops_quickly_on_channel_signal() {
+        // Verify the tracker wakes from its inter-poll sleep immediately when
+        // signalled, rather than waiting the full 5 seconds.
+        let (mut tracker, stop_tx, should_stop) = make_tracker(false);
+
+        let handle = std::thread::spawn(move || tracker.run());
+
+        // Give the tracker time to start up and reach its recv_timeout sleep.
+        sleep(Duration::from_millis(300));
+
+        let signal_time = std::time::Instant::now();
+        should_stop.store(true, Ordering::SeqCst);
+        let _ = stop_tx.send(());
+
+        let result = handle.join().expect("tracker thread panicked");
+        assert!(result.is_ok());
+        assert!(
+            signal_time.elapsed() < Duration::from_secs(1),
+            "Tracker took {:?} to stop after signal (expected < 1s)",
+            signal_time.elapsed()
+        );
     }
 }

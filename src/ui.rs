@@ -11,6 +11,7 @@ use std::sync::{
 
 pub struct GameManagerApp {
     is_open: Arc<AtomicBool>,
+    was_open: bool,
     games: Vec<Game>,
     sessions: HashMap<String, Vec<Session>>,
     state: State,
@@ -22,10 +23,11 @@ pub struct GameManagerApp {
 }
 
 impl GameManagerApp {
-    fn new(is_open: Arc<AtomicBool>, ctx_ref: egui::Context) -> Self {
+    fn new(is_open: Arc<AtomicBool>) -> Self {
         let (games, sessions, state) = Self::load_data();
         Self {
             is_open,
+            was_open: false,
             games,
             sessions,
             state,
@@ -37,15 +39,27 @@ impl GameManagerApp {
 
     fn load_data() -> (Vec<Game>, HashMap<String, Vec<Session>>, State) {
         let dir = data_dir();
-        let games = store::load(dir.join("games.json"))
-            .unwrap_or_default()
-            .unwrap_or_default();
-        let sessions = store::load(dir.join("sessions.json"))
-            .unwrap_or_default()
-            .unwrap_or_default();
-        let state = store::load(dir.join("state.json"))
-            .unwrap_or_default()
-            .unwrap_or_default();
+        let games = match store::load(dir.join("games.json")) {
+            Ok(data) => data.unwrap_or_default(),
+            Err(e) => {
+                log::error!("Failed to load games.json: {e}. Using empty list to avoid overwriting corrupt data.");
+                Vec::new()
+            }
+        };
+        let sessions = match store::load(dir.join("sessions.json")) {
+            Ok(data) => data.unwrap_or_default(),
+            Err(e) => {
+                log::error!("Failed to load sessions.json: {e}.");
+                HashMap::new()
+            }
+        };
+        let state = match store::load(dir.join("state.json")) {
+            Ok(data) => data.unwrap_or_default(),
+            Err(e) => {
+                log::error!("Failed to load state.json: {e}.");
+                State::default()
+            }
+        };
         (games, sessions, state)
     }
 
@@ -58,23 +72,20 @@ impl GameManagerApp {
 
     fn reload_all(&mut self) {
         let dir = data_dir();
-        self.games = store::load(dir.join("games.json"))
-            .unwrap_or_default()
-            .unwrap_or_default();
-        self.state = store::load(dir.join("state.json"))
-            .unwrap_or_default()
-            .unwrap_or_default();
-        self.sessions = store::load(dir.join("sessions.json"))
-            .unwrap_or_default()
-            .unwrap_or_default();
+        match store::load(dir.join("games.json")) {
+            Ok(data) => self.games = data.unwrap_or_default(),
+            Err(e) => log::error!("Failed to reload games.json: {e}. Keeping previous data."),
+        }
+        match store::load(dir.join("state.json")) {
+            Ok(data) => self.state = data.unwrap_or_default(),
+            Err(e) => log::error!("Failed to reload state.json: {e}. Keeping previous data."),
+        }
+        match store::load(dir.join("sessions.json")) {
+            Ok(data) => self.sessions = data.unwrap_or_default(),
+            Err(e) => log::error!("Failed to reload sessions.json: {e}. Keeping previous data."),
+        }
     }
 
-    fn reload_games(&mut self) {
-        let dir = data_dir();
-        self.games = store::load(dir.join("games.json"))
-            .unwrap_or_default()
-            .unwrap_or_default();
-    }
 }
 
 impl eframe::App for GameManagerApp {
@@ -82,18 +93,24 @@ impl eframe::App for GameManagerApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.is_open.store(false, Ordering::SeqCst);
+            self.was_open = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             return;
         }
 
-        if !self.is_open.load(Ordering::SeqCst) {
+        let open_now = self.is_open.load(Ordering::SeqCst);
+        if !open_now {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.was_open = false;
             return;
-        } else {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         }
 
-        self.reload_all();
+        // Reload data only when the window transitions from closed → open.
+        if !self.was_open {
+            self.reload_all();
+            self.was_open = true;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Game Time Tracker - Management");
@@ -153,7 +170,7 @@ impl eframe::App for GameManagerApp {
             if let Some(idx) = to_remove {
                 self.games.remove(idx);
                 self.save_games();
-                self.reload_games();
+                // No reload needed: self.games is already the correct in-memory state.
             }
 
             ui.separator();
@@ -187,7 +204,7 @@ impl eframe::App for GameManagerApp {
                                 .to_string(),
                         );
                     } else {
-                        self.reload_games();
+                        self.reload_all();
                         if self.games.iter().any(|g| g.id == game_id) {
                             self.add_error = Some("Game already exists.".to_string());
                         } else {
@@ -197,7 +214,7 @@ impl eframe::App for GameManagerApp {
                                 executable: trimmed_exec,
                             });
                             self.save_games();
-                            self.reload_games();
+                            self.reload_all();
                             self.new_game_name.clear();
                             self.new_game_exec.clear();
                             self.add_error = None;
@@ -246,7 +263,7 @@ pub fn init_ui_thread(is_open: Arc<AtomicBool>, ctx_sender: std::sync::mpsc::Sen
             options,
             Box::new(move |cc| {
                 let _ = ctx_sender.send(cc.egui_ctx.clone());
-                Ok(Box::new(GameManagerApp::new(is_open, cc.egui_ctx.clone())))
+                Ok(Box::new(GameManagerApp::new(is_open)))
             }),
         );
 

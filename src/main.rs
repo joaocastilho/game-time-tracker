@@ -108,7 +108,6 @@ fn main() -> anyhow::Result<()> {
             info!("Starting game-time-tracker with system tray...");
 
             let data_dir = config::data_dir();
-            let _ = std::fs::remove_file(data_dir.join("app.lock"));
 
             let event_loop = tao::event_loop::EventLoopBuilder::new().build();
 
@@ -130,11 +129,12 @@ fn main() -> anyhow::Result<()> {
 
             let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
 
             let active_count_clone = active_count.clone();
             let should_stop_clone = should_stop.clone();
             std::thread::spawn(move || {
-                let mut tracker = AppTracker::new(active_count_clone, should_stop_clone);
+                let mut tracker = AppTracker::new(active_count_clone, should_stop_clone, stop_rx);
                 if let Err(e) = tracker.run() {
                     error!("Tracker stopped due to an error: {}", e);
                 }
@@ -159,7 +159,9 @@ fn main() -> anyhow::Result<()> {
             let sessions_path = data_dir.join("sessions.json");
 
             event_loop.run(move |_event, _, control_flow| {
-                *control_flow = tao::event_loop::ControlFlow::Poll;
+                *control_flow = tao::event_loop::ControlFlow::WaitUntil(
+                    std::time::Instant::now() + std::time::Duration::from_millis(50),
+                );
 
                 let current_count = active_count.load(Ordering::Relaxed);
                 if current_count != last_active_count {
@@ -172,8 +174,8 @@ fn main() -> anyhow::Result<()> {
 
                 while let Ok(event) = menu_channel.try_recv() {
                     if event.id == quit_id {
-                        let _ = std::fs::remove_file(data_dir.join("app.lock"));
                         should_stop.store(true, Ordering::SeqCst);
+                        let _ = stop_tx.send(());
                         *control_flow = tao::event_loop::ControlFlow::Exit;
                     } else if event.id == open_data_id {
                         if let Err(e) = open::that(&data_dir) {

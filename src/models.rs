@@ -11,11 +11,17 @@ pub struct Game {
 
 impl Game {
     pub fn generate_id(name: &str) -> String {
+        // Map non-alphanumeric chars to '-', then collapse consecutive dashes
+        // and strip any leading/trailing ones.
         name.trim()
             .to_lowercase()
             .chars()
             .map(|c| if c.is_alphanumeric() { c } else { '-' })
-            .collect()
+            .collect::<String>()
+            .split('-')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("-")
     }
 }
 
@@ -106,19 +112,34 @@ mod tests {
 
     #[test]
     fn test_generate_id_with_special_chars() {
+        // Special chars become dashes, which then get collapsed and stripped.
         let id = Game::generate_id("Game! @#$%");
-        assert_eq!(id, "game------");
+        assert_eq!(id, "game");
     }
 
     #[test]
     fn test_generate_id_all_non_alphanumeric() {
         let id = Game::generate_id("!@#$%");
-        assert_eq!(id, "-----");
+        assert!(id.is_empty());
     }
 
     #[test]
     fn test_generate_id_mixed() {
+        // Parentheses collapse into a single dash.
         let id = Game::generate_id("Elden Ring (2022)");
-        assert_eq!(id, "elden-ring--2022-");
+        assert_eq!(id, "elden-ring-2022");
+    }
+
+    #[test]
+    fn test_generate_id_consecutive_specials() {
+        // Multiple consecutive special chars collapse to one dash.
+        let id = Game::generate_id("Hello   World");
+        assert_eq!(id, "hello-world");
+    }
+
+    #[test]
+    fn test_generate_id_strips_edge_dashes() {
+        let id = Game::generate_id("!Minecraft!");
+        assert_eq!(id, "minecraft");
     }
 }
