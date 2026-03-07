@@ -22,7 +22,7 @@ pub struct GameManagerApp {
 }
 
 impl GameManagerApp {
-    fn new(is_open: Arc<AtomicBool>) -> Self {
+    fn new(is_open: Arc<AtomicBool>, ctx_ref: egui::Context) -> Self {
         let (games, sessions, state) = Self::load_data();
         Self {
             is_open,
@@ -79,6 +79,20 @@ impl GameManagerApp {
 
 impl eframe::App for GameManagerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.is_open.store(false, Ordering::SeqCst);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            return;
+        }
+
+        if !self.is_open.load(Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            return;
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        }
+
         self.reload_all();
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -201,13 +215,7 @@ impl eframe::App for GameManagerApp {
     }
 }
 
-pub fn spawn_ui(is_open: Arc<AtomicBool>) {
-    if is_open.swap(true, Ordering::SeqCst) {
-        return;
-    }
-
-    let is_open_clone = Arc::clone(&is_open);
-
+pub fn init_ui_thread(is_open: Arc<AtomicBool>, ctx_sender: std::sync::mpsc::Sender<egui::Context>) {
     let icon_rgba = icon::icon_rgba();
     let icon = egui::IconData {
         rgba: icon_rgba,
@@ -220,6 +228,7 @@ pub fn spawn_ui(is_open: Arc<AtomicBool>) {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([500.0, 600.0])
                 .with_min_inner_size([400.0, 400.0])
+                .with_visible(false)
                 .with_icon(icon.clone()),
             ..Default::default()
         };
@@ -235,12 +244,14 @@ pub fn spawn_ui(is_open: Arc<AtomicBool>) {
         let result = eframe::run_native(
             "Game Time Tracker",
             options,
-            Box::new(|_cc| Ok(Box::new(GameManagerApp::new(is_open_clone)))),
+            Box::new(move |cc| {
+                let _ = ctx_sender.send(cc.egui_ctx.clone());
+                Ok(Box::new(GameManagerApp::new(is_open, cc.egui_ctx.clone())))
+            }),
         );
 
         if let Err(e) = result {
             log::error!("eframe window error: {}", e);
-            is_open.store(false, Ordering::SeqCst);
         }
     });
 }

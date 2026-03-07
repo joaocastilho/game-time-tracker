@@ -1,0 +1,1 @@
+fn main() { println!("Before"); let options = eframe::NativeOptions::default(); let result = eframe::run_native("test", options, Box::new(|_| Ok(Box::new(App)))); println!("After: {:?}", result); } struct App; impl eframe::App for App { fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) { ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close); } }

@@ -34,7 +34,7 @@ enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 
     std::panic::set_hook(Box::new(|panic_info| {
         let msg = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
@@ -85,6 +85,26 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         None => {
+            let mut sys = sysinfo::System::new_all();
+            sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            let current_exe = std::env::current_exe().ok();
+            let mut count = 0;
+            for process in sys.processes().values() {
+                if let Some(exe) = current_exe.as_ref() {
+                    if let Some(process_exe) = process.exe() {
+                        if process_exe == exe {
+                            count += 1;
+                        }
+                    }
+                } else if process.name().eq_ignore_ascii_case("gtt.exe") || process.name().eq_ignore_ascii_case("game-time-tracker.exe") {
+                    count += 1;
+                }
+            }
+            if count > 1 {
+                info!("Another instance is already running. Exiting.");
+                return Ok(());
+            }
+
             info!("Starting game-time-tracker with system tray...");
 
             let data_dir = config::data_dir();
@@ -126,6 +146,10 @@ fn main() -> anyhow::Result<()> {
 
             let mut last_active_count = 0;
             let is_ui_open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            
+            let (ctx_tx, ctx_rx) = std::sync::mpsc::channel();
+            ui::init_ui_thread(is_ui_open.clone(), ctx_tx);
+            let egui_ctx = ctx_rx.recv().context("Failed to receive egui context from UI thread")?;
 
             let manage_games_id = manage_games_item.into_id();
             let edit_sessions_id = edit_sessions_item.into_id();
@@ -146,7 +170,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                if let Ok(event) = menu_channel.try_recv() {
+                while let Ok(event) = menu_channel.try_recv() {
                     if event.id == quit_id {
                         let _ = std::fs::remove_file(data_dir.join("app.lock"));
                         should_stop.store(true, Ordering::SeqCst);
@@ -160,12 +184,16 @@ fn main() -> anyhow::Result<()> {
                             error!("Failed to open sessions.json: {}", e);
                         }
                     } else if event.id == manage_games_id {
-                        ui::spawn_ui(is_ui_open.clone());
+                        is_ui_open.store(true, Ordering::SeqCst);
+                        egui_ctx.request_repaint();
                     }
                 }
 
-                if let Ok(event) = tray_channel.try_recv() {
-                    info!("Tray icon event: {:?}", event);
+                while let Ok(event) = tray_channel.try_recv() {
+                    if let tray_icon::TrayIconEvent::DoubleClick { .. } = event {
+                        is_ui_open.store(true, Ordering::SeqCst);
+                        egui_ctx.request_repaint();
+                    }
                 }
             });
         }
