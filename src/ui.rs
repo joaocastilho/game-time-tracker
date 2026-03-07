@@ -5,8 +5,8 @@ use crate::store;
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 pub struct GameManagerApp {
@@ -56,8 +56,11 @@ impl GameManagerApp {
         }
     }
 
-    fn reload_state(&mut self) {
+    fn reload_all(&mut self) {
         let dir = data_dir();
+        self.games = store::load(dir.join("games.json"))
+            .unwrap_or_default()
+            .unwrap_or_default();
         self.state = store::load(dir.join("state.json"))
             .unwrap_or_default()
             .unwrap_or_default();
@@ -65,19 +68,26 @@ impl GameManagerApp {
             .unwrap_or_default()
             .unwrap_or_default();
     }
+
+    fn reload_games(&mut self) {
+        let dir = data_dir();
+        self.games = store::load(dir.join("games.json"))
+            .unwrap_or_default()
+            .unwrap_or_default();
+    }
 }
 
 impl eframe::App for GameManagerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.reload_state();
+        self.reload_all();
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Game Time Tracker - Management");
             ui.separator();
 
             ui.horizontal(|ui| {
-                if ui.button("↻ Refresh State").clicked() {
-                    self.reload_state();
+                if ui.button("↻ Refresh").clicked() {
+                    self.reload_all();
                 }
             });
 
@@ -129,6 +139,7 @@ impl eframe::App for GameManagerApp {
             if let Some(idx) = to_remove {
                 self.games.remove(idx);
                 self.save_games();
+                self.reload_games();
             }
 
             ui.separator();
@@ -148,28 +159,36 @@ impl eframe::App for GameManagerApp {
             }
 
             if ui.button("➕ Add Game").clicked() {
-                let game_id = self
-                    .new_game_name
-                    .trim()
-                    .to_lowercase()
-                    .chars()
-                    .map(|c| if c.is_alphanumeric() { c } else { '-' })
-                    .collect::<String>();
+                let trimmed_name = self.new_game_name.trim().to_string();
+                let trimmed_exec = self.new_game_exec.trim().to_string();
 
-                if self.new_game_name.trim().is_empty() || self.new_game_exec.trim().is_empty() {
+                if trimmed_name.is_empty() || trimmed_exec.is_empty() {
                     self.add_error = Some("All fields must be filled out.".to_string());
-                } else if self.games.iter().any(|g| g.id == game_id) {
-                    self.add_error = Some("Game already exists.".to_string());
                 } else {
-                    self.games.push(Game {
-                        id: game_id,
-                        name: self.new_game_name.trim().to_string(),
-                        executable: self.new_game_exec.trim().to_string(),
-                    });
-                    self.save_games();
-                    self.new_game_name.clear();
-                    self.new_game_exec.clear();
-                    self.add_error = None;
+                    let game_id = Game::generate_id(&trimmed_name);
+
+                    if game_id.is_empty() {
+                        self.add_error = Some(
+                            "Game name must contain at least one alphanumeric character."
+                                .to_string(),
+                        );
+                    } else {
+                        self.reload_games();
+                        if self.games.iter().any(|g| g.id == game_id) {
+                            self.add_error = Some("Game already exists.".to_string());
+                        } else {
+                            self.games.push(Game {
+                                id: game_id,
+                                name: trimmed_name,
+                                executable: trimmed_exec,
+                            });
+                            self.save_games();
+                            self.reload_games();
+                            self.new_game_name.clear();
+                            self.new_game_exec.clear();
+                            self.add_error = None;
+                        }
+                    }
                 }
             }
         });

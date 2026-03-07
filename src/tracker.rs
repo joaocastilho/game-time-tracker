@@ -6,8 +6,8 @@ use chrono::Utc;
 use log::info;
 use std::collections::HashMap;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use std::thread::sleep;
 use std::time::Duration;
@@ -57,10 +57,8 @@ impl AppTracker {
             all_sessions.entry(game_id).or_default().push(session);
         }
 
-        // Save recovered sessions
         store::save(&all_sessions, &sessions_path)?;
 
-        // Clear state
         let new_state = State::default();
         store::save(&new_state, &state_path)?;
 
@@ -140,8 +138,10 @@ impl AppTracker {
             if state_changed {
                 store::save(&state, &state_path)?;
             }
-            if sessions_changed && let Some(sessions) = all_sessions {
-                store::save(&sessions, &sessions_path)?;
+            if sessions_changed {
+                if let Some(sessions) = all_sessions {
+                    store::save(&sessions, &sessions_path)?;
+                }
             }
 
             sleep(Duration::from_secs(5));
@@ -157,7 +157,33 @@ mod tests {
     fn test_app_tracker_initialization() {
         let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let _tracker = AppTracker::new(active_count, should_stop);
-        assert!(true);
+        let tracker = AppTracker::new(active_count.clone(), should_stop.clone());
+
+        assert_eq!(active_count.load(Ordering::Relaxed), 0);
+        assert!(!should_stop.load(Ordering::SeqCst));
+
+        std::mem::forget(tracker);
+    }
+
+    #[test]
+    fn test_app_tracker_stops_on_signal() {
+        let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+        let mut tracker = AppTracker::new(active_count, should_stop);
+
+        let result = tracker.run();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_active_count_tracking() {
+        let active_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+        let _tracker = AppTracker::new(active_count.clone(), should_stop);
+
+        active_count.store(3, Ordering::Relaxed);
+        assert_eq!(active_count.load(Ordering::Relaxed), 3);
     }
 }

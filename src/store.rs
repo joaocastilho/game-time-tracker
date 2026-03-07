@@ -1,4 +1,4 @@
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use std::path::Path;
 use thiserror::Error;
 
@@ -34,7 +34,117 @@ pub fn save<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<(), Store
 
     let json = serde_json::to_string_pretty(data)?;
     std::fs::write(&tmp_path, json)?;
-    std::fs::rename(&tmp_path, path)?;
+
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(e.into());
+    }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    struct TestData {
+        name: String,
+        value: i32,
+    }
+
+    #[test]
+    fn test_save_and_load() {
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("test_store.json");
+
+        let data = TestData {
+            name: "test".to_string(),
+            value: 42,
+        };
+
+        save(&data, &test_path).unwrap();
+        let loaded: TestData = load(&test_path).unwrap().expect("Failed to load data");
+
+        assert_eq!(data, loaded);
+
+        std::fs::remove_file(test_path).ok();
+    }
+
+    #[test]
+    fn test_load_nonexistent() {
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("nonexistent_file_12345.json");
+
+        let result: Result<Option<TestData>, _> = load(&test_path);
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_save_and_load_hashmap() {
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("test_hashmap.json");
+
+        let mut data: HashMap<String, Vec<TestData>> = HashMap::new();
+        data.insert(
+            "key1".to_string(),
+            vec![
+                TestData {
+                    name: "a".to_string(),
+                    value: 1,
+                },
+                TestData {
+                    name: "b".to_string(),
+                    value: 2,
+                },
+            ],
+        );
+
+        save(&data, &test_path).unwrap();
+        let loaded: HashMap<String, Vec<TestData>> =
+            load(&test_path).unwrap().expect("Failed to load data");
+
+        assert_eq!(data, loaded);
+
+        std::fs::remove_file(test_path).ok();
+    }
+
+    #[test]
+    fn test_load_malformed_json() {
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("malformed_test.json");
+
+        std::fs::write(&test_path, "{invalid json").ok();
+
+        let result: Result<Option<TestData>, _> = load(&test_path);
+        assert!(result.is_err());
+
+        std::fs::remove_file(test_path).ok();
+    }
+
+    #[test]
+    fn test_save_overwrites_existing() {
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("overwrite_test.json");
+
+        let data1 = TestData {
+            name: "first".to_string(),
+            value: 1,
+        };
+        save(&data1, &test_path).unwrap();
+
+        let data2 = TestData {
+            name: "second".to_string(),
+            value: 2,
+        };
+        save(&data2, &test_path).unwrap();
+
+        let loaded: TestData = load(&test_path).unwrap().expect("Failed to load data");
+        assert_eq!(loaded.name, "second");
+        assert_eq!(loaded.value, 2);
+
+        std::fs::remove_file(test_path).ok();
+    }
 }

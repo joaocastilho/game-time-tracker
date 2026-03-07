@@ -15,8 +15,8 @@ use log::{error, info};
 use std::env;
 use std::sync::atomic::Ordering;
 use tracker::AppTracker;
-use winreg::RegKey;
 use winreg::enums::*;
+use winreg::RegKey;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -124,6 +124,13 @@ fn main() -> anyhow::Result<()> {
             let mut last_active_count = 0;
             let is_ui_open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
+            let manage_games_id = manage_games_item.into_id();
+            let edit_sessions_id = edit_sessions_item.into_id();
+            let open_data_id = open_data_item.into_id();
+            let quit_id = quit_item.into_id();
+            let data_dir = config::data_dir();
+            let sessions_path = data_dir.join("sessions.json");
+
             event_loop.run(move |_event, _, control_flow| {
                 *control_flow = tao::event_loop::ControlFlow::Poll;
 
@@ -137,18 +144,18 @@ fn main() -> anyhow::Result<()> {
                 }
 
                 if let Ok(event) = menu_channel.try_recv() {
-                    if event.id == quit_item.id() {
+                    if event.id == quit_id {
                         should_stop.store(true, Ordering::SeqCst);
                         *control_flow = tao::event_loop::ControlFlow::Exit;
-                    } else if event.id == open_data_item.id() {
-                        if let Err(e) = open::that(config::data_dir()) {
+                    } else if event.id == open_data_id {
+                        if let Err(e) = open::that(&data_dir) {
                             error!("Failed to open data folder: {}", e);
                         }
-                    } else if event.id == edit_sessions_item.id() {
-                        if let Err(e) = open::that(config::data_dir().join("sessions.json")) {
+                    } else if event.id == edit_sessions_id {
+                        if let Err(e) = open::that(&sessions_path) {
                             error!("Failed to open sessions.json: {}", e);
                         }
-                    } else if event.id == manage_games_item.id() {
+                    } else if event.id == manage_games_id {
                         ui::spawn_ui(is_ui_open.clone());
                     }
                 }

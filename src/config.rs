@@ -10,15 +10,34 @@ pub fn data_dir() -> PathBuf {
 
     path.push("game-time-tracker");
 
-    if !path.exists()
-        && let Err(e) = std::fs::create_dir_all(&path)
-    {
-        warn!(
-            "Failed to create data directory at {}: {}",
-            path.display(),
-            e
-        );
+    if !path.exists() {
+        if let Err(e) = std::fs::create_dir_all(&path) {
+            warn!(
+                "Failed to create data directory at {}: {}",
+                path.display(),
+                e
+            );
+        }
     }
 
     path
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_data_dir_creation() {
+        let dir = data_dir();
+        assert!(dir.exists(), "Data directory should exist");
+        assert!(dir.is_dir(), "Data directory should be a directory");
+        assert!(dir.to_string_lossy().contains("game-time-tracker"));
+    }
+
+    #[test]
+    fn test_data_dir_is_absolute() {
+        let dir = data_dir();
+        assert!(dir.is_absolute(), "Data dir should be absolute path");
+    }
 }
