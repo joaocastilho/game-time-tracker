@@ -216,13 +216,21 @@ pub fn spawn_ui(is_open: Arc<AtomicBool>) {
     };
 
     std::thread::spawn(move || {
-        let options = eframe::NativeOptions {
+        let mut options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([500.0, 600.0])
                 .with_min_inner_size([400.0, 400.0])
                 .with_icon(icon.clone()),
             ..Default::default()
         };
+
+        #[cfg(target_os = "windows")]
+        {
+            options.event_loop_builder = Some(Box::new(|builder| {
+                use winit::platform::windows::EventLoopBuilderExtWindows;
+                builder.with_any_thread(true);
+            }));
+        }
 
         let result = eframe::run_native(
             "Game Time Tracker",

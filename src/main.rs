@@ -87,6 +87,9 @@ fn main() -> anyhow::Result<()> {
         None => {
             info!("Starting game-time-tracker with system tray...");
 
+            let data_dir = config::data_dir();
+            let _ = std::fs::remove_file(data_dir.join("app.lock"));
+
             let event_loop = tao::event_loop::EventLoopBuilder::new().build();
 
             let menu = muda::Menu::new();
@@ -145,6 +148,7 @@ fn main() -> anyhow::Result<()> {
 
                 if let Ok(event) = menu_channel.try_recv() {
                     if event.id == quit_id {
+                        let _ = std::fs::remove_file(data_dir.join("app.lock"));
                         should_stop.store(true, Ordering::SeqCst);
                         *control_flow = tao::event_loop::ControlFlow::Exit;
                     } else if event.id == open_data_id {
