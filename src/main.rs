@@ -107,7 +107,6 @@ fn main() -> anyhow::Result<()> {
 
             info!("Starting game-time-tracker with system tray...");
 
-            let data_dir = config::data_dir();
 
             let event_loop = tao::event_loop::EventLoopBuilder::new().build();
 

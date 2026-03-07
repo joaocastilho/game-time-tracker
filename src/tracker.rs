@@ -90,16 +90,16 @@ impl AppTracker {
             let mut sessions_changed = false;
             let mut all_sessions: Option<HashMap<String, Vec<Session>>> = None;
 
-            for game in games {
+            for game in &games {
                 let is_running = self.monitor.is_running(&game.executable);
-                let game_id = game.id;
+                let game_id = game.id.as_str();
 
-                let is_active = state.active_sessions.contains_key(&game_id);
+                let is_active = state.active_sessions.contains_key(game_id);
 
                 if is_running && !is_active {
                     info!("Started tracking session for game: {}", game.name);
                     state.active_sessions.insert(
-                        game_id.clone(),
+                        game_id.to_owned(),
                         Session {
                             start: Utc::now(),
                             end: None,
@@ -111,19 +111,20 @@ impl AppTracker {
                         .store(state.active_sessions.len(), Ordering::Relaxed);
                 } else if !is_running && is_active {
                     info!("Ended session for game: {}", game.name);
-                    let Some(mut session) = state.active_sessions.remove(&game_id) else {
+                    let Some(mut session) = state.active_sessions.remove(game_id) else {
                         continue;
                     };
                     let end_time = Utc::now();
                     session.end = Some(end_time);
-                    session.duration_secs = (end_time - session.start).num_seconds().max(0) as u64;
+                    session.duration_secs =
+                        (end_time - session.start).num_seconds().max(0) as u64;
 
                     if all_sessions.is_none() {
                         all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
                     }
 
                     if let Some(sessions) = all_sessions.as_mut() {
-                        sessions.entry(game_id).or_default().push(session);
+                        sessions.entry(game_id.to_owned()).or_default().push(session);
                     }
 
                     sessions_changed = true;
@@ -131,6 +132,42 @@ impl AppTracker {
                     self.active_count
                         .store(state.active_sessions.len(), Ordering::Relaxed);
                 }
+            }
+
+            // End any active sessions whose game has been removed from games.json.
+            // Without this, removing a tracked game while it's running leaves its
+            // active_session open indefinitely, inflating its duration at recovery.
+            let current_ids: std::collections::HashSet<&str> =
+                games.iter().map(|g| g.id.as_str()).collect();
+            let zombie_ids: Vec<String> = state
+                .active_sessions
+                .keys()
+                .filter(|id| !current_ids.contains(id.as_str()))
+                .cloned()
+                .collect();
+            if !zombie_ids.is_empty() {
+                info!(
+                    "Ending {} zombie session(s) for removed game(s)",
+                    zombie_ids.len()
+                );
+                if all_sessions.is_none() {
+                    all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
+                }
+                for zombie_id in zombie_ids {
+                    if let Some(mut session) = state.active_sessions.remove(&zombie_id) {
+                        let end_time = Utc::now();
+                        session.end = Some(end_time);
+                        session.duration_secs =
+                            (end_time - session.start).num_seconds().max(0) as u64;
+                        if let Some(sessions) = all_sessions.as_mut() {
+                            sessions.entry(zombie_id).or_default().push(session);
+                        }
+                        sessions_changed = true;
+                        state_changed = true;
+                    }
+                }
+                self.active_count
+                    .store(state.active_sessions.len(), Ordering::Relaxed);
             }
 
             if !state.active_sessions.is_empty() {
@@ -263,6 +300,52 @@ mod tests {
             signal_time.elapsed() < Duration::from_secs(1),
             "Tracker took {:?} to stop after sender drop (expected < 1s)",
             signal_time.elapsed()
+        );
+    }
+    #[test]
+    fn test_zombie_session_detection() {
+        // Removing a game from games.json while it's being tracked should cause
+        // the tracker to detect its session as a zombie and close it.
+        use std::collections::HashSet;
+
+        let mut state = State::default();
+        state.active_sessions.insert(
+            "removed-game".to_string(),
+            Session {
+                start: Utc::now(),
+                end: None,
+                duration_secs: 0,
+            },
+        );
+        state.active_sessions.insert(
+            "kept-game".to_string(),
+            Session {
+                start: Utc::now(),
+                end: None,
+                duration_secs: 0,
+            },
+        );
+
+        // Only "kept-game" remains in the games list.
+        let games = vec![Game {
+            id: "kept-game".to_string(),
+            name: "Kept Game".to_string(),
+            executable: "kept.exe".to_string(),
+        }];
+
+        let current_ids: HashSet<&str> = games.iter().map(|g| g.id.as_str()).collect();
+        let zombie_ids: Vec<String> = state
+            .active_sessions
+            .keys()
+            .filter(|id| !current_ids.contains(id.as_str()))
+            .cloned()
+            .collect();
+
+        assert_eq!(zombie_ids.len(), 1, "exactly one zombie session expected");
+        assert_eq!(zombie_ids[0], "removed-game");
+        assert!(
+            !zombie_ids.contains(&"kept-game".to_string()),
+            "kept-game must not be flagged as zombie"
         );
     }
 }
