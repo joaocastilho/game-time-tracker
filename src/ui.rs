@@ -86,6 +86,21 @@ impl GameManagerApp {
         }
     }
 
+    /// Reload only state and sessions — used for the 1-second refresh cycle
+    /// while the window is already open, to keep "▶ Running" status current
+    /// without re-reading the full games list.
+    fn reload_state(&mut self) {
+        let dir = data_dir();
+        match store::load(dir.join("state.json")) {
+            Ok(data) => self.state = data.unwrap_or_default(),
+            Err(e) => log::error!("Failed to reload state.json: {e}. Keeping previous data."),
+        }
+        match store::load(dir.join("sessions.json")) {
+            Ok(data) => self.sessions = data.unwrap_or_default(),
+            Err(e) => log::error!("Failed to reload sessions.json: {e}. Keeping previous data."),
+        }
+    }
+
 }
 
 impl eframe::App for GameManagerApp {
@@ -105,10 +120,14 @@ impl eframe::App for GameManagerApp {
             return;
         }
 
-        // Reload data only when the window transitions from closed → open.
+        // On open-transition: reload all data from disk.
+        // On subsequent 1s repaints: only reload state/sessions so the
+        // "\u25ba Running" indicator stays current without re-reading the game list.
         if !self.was_open {
             self.reload_all();
             self.was_open = true;
+        } else {
+            self.reload_state();
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
 

@@ -149,7 +149,9 @@ fn main() -> anyhow::Result<()> {
             
             let (ctx_tx, ctx_rx) = std::sync::mpsc::channel();
             ui::init_ui_thread(is_ui_open.clone(), ctx_tx);
-            let egui_ctx = ctx_rx.recv().context("Failed to receive egui context from UI thread")?;
+            let egui_ctx = ctx_rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .context("Timed out waiting for eframe to initialize (the UI thread may have failed to start)")?;
 
             let manage_games_id = manage_games_item.into_id();
             let edit_sessions_id = edit_sessions_item.into_id();

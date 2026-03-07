@@ -153,8 +153,14 @@ impl AppTracker {
                 .stop_rx
                 .recv_timeout(Duration::from_secs(5))
             {
-                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    // Stop signal or sender dropped; will exit at top of next iteration.
+                Ok(()) => {
+                    // Stop signal received; will exit at top of next iteration.
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    // Sender was dropped (main thread exited); stop immediately
+                    // to avoid spinning in a tight loop on every future call.
+                    info!("Stop channel disconnected, stopping tracker");
+                    break Ok(());
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     // Normal timeout — continue tracking.
@@ -234,6 +240,28 @@ mod tests {
         assert!(
             signal_time.elapsed() < Duration::from_secs(1),
             "Tracker took {:?} to stop after signal (expected < 1s)",
+            signal_time.elapsed()
+        );
+    }
+    #[test]
+    fn test_tracker_stops_on_sender_drop() {
+        // Verify the tracker exits immediately when the sender is dropped
+        // (e.g. main thread panics) rather than spinning in a busy-loop.
+        let (mut tracker, stop_tx, _should_stop) = make_tracker(false);
+
+        let handle = std::thread::spawn(move || tracker.run());
+
+        // Give the tracker time to reach its recv_timeout sleep.
+        sleep(Duration::from_millis(300));
+
+        let signal_time = std::time::Instant::now();
+        drop(stop_tx); // disconnect without sending
+
+        let result = handle.join().expect("tracker thread panicked");
+        assert!(result.is_ok());
+        assert!(
+            signal_time.elapsed() < Duration::from_secs(1),
+            "Tracker took {:?} to stop after sender drop (expected < 1s)",
             signal_time.elapsed()
         );
     }
