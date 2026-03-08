@@ -143,37 +143,12 @@ fn handle_cli(cli: Cli) -> Option<()> {
     }
 }
 
-fn check_single_instance() -> bool {
-    let mut sys = sysinfo::System::new_all();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    let current_exe = std::env::current_exe().ok();
-    let mut count = 0;
-    for process in sys.processes().values() {
-        if let Some(exe) = current_exe.as_ref() {
-            if let Some(process_exe) = process.exe() {
-                if process_exe == exe {
-                    count += 1;
-                }
-            }
-        } else if process.name().eq_ignore_ascii_case("gtt.exe")
-            || process.name().eq_ignore_ascii_case("game-time-tracker.exe")
-        {
-            count += 1;
-        }
-    }
-    count > 1
-}
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 
     let cli = Cli::parse();
     if handle_cli(cli).is_some() {
-        return;
-    }
-
-    if check_single_instance() {
-        println!("Another instance is already running. Exiting.");
         return;
     }
 
@@ -185,6 +160,14 @@ fn main() {
     let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
 
     let tauri_app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = app
+                .get_webview_window("main")
+                .map(|w| {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                });
+        }))
         .setup(move |app| {
             // Setup system tray menu
             let manage_i = MenuItemBuilder::with_id("manage", "Manage Games").build(app)?;
