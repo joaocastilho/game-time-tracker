@@ -197,20 +197,19 @@ fn main() {
                 .build()?;
 
             let active_clone = active_count.clone();
-            
+
             let tray = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Game Time Tracker")
                 .icon(app.default_window_icon().unwrap().clone())
-                .on_tray_icon_event(|tray, event| match event {
-                    TrayIconEvent::DoubleClick { .. } => {
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::DoubleClick { .. } = event {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
                     }
-                    _ => {}
                 })
                 .on_menu_event(move |app_handle, event| {
                     if event.id() == "manage" {
@@ -232,7 +231,8 @@ fn main() {
             let active_count_tracker = active_count.clone();
             let should_stop_tracker = should_stop.clone();
             std::thread::spawn(move || {
-                let mut tracker = AppTracker::new(active_count_tracker, should_stop_tracker, stop_rx);
+                let mut tracker =
+                    AppTracker::new(active_count_tracker, should_stop_tracker, stop_rx);
                 if let Err(e) = tracker.run() {
                     error!("Tracker stopped: {}", e);
                 }
@@ -247,21 +247,15 @@ fn main() {
                     let current = active_clone.load(Ordering::Relaxed);
                     if current != last {
                         last = current;
-                        let _ = tray_handle.set_tooltip(Some(format!(
-                            "Game Time Tracker ({} active)",
-                            current
-                        )));
+                        let _ = tray_handle
+                            .set_tooltip(Some(format!("Game Time Tracker ({} active)", current)));
                     }
                 }
             });
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            get_ui_data,
-            add_game,
-            remove_game
-        ])
+        .invoke_handler(tauri::generate_handler![get_ui_data, add_game, remove_game])
         .on_window_event(|window, event| match event {
             // When the user clicks the "X" button, hide the window instead of killing the app
             tauri::WindowEvent::CloseRequested { api, .. } => {

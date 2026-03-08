@@ -115,15 +115,17 @@ impl AppTracker {
                     };
                     let end_time = Utc::now();
                     session.end = Some(end_time);
-                    session.duration_secs =
-                        (end_time - session.start).num_seconds().max(0) as u64;
+                    session.duration_secs = (end_time - session.start).num_seconds().max(0) as u64;
 
                     if all_sessions.is_none() {
                         all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
                     }
 
                     if let Some(sessions) = all_sessions.as_mut() {
-                        sessions.entry(game_id.to_owned()).or_default().push(session);
+                        sessions
+                            .entry(game_id.to_owned())
+                            .or_default()
+                            .push(session);
                     }
 
                     sessions_changed = true;
@@ -185,10 +187,7 @@ impl AppTracker {
 
             // Interruptible sleep: wakes immediately when a stop signal arrives,
             // rather than blocking the full 5 seconds on Quit.
-            match self
-                .stop_rx
-                .recv_timeout(Duration::from_secs(5))
-            {
+            match self.stop_rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(()) => {
                     // Stop signal received; will exit at top of next iteration.
                 }
@@ -210,6 +209,7 @@ impl AppTracker {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
+    use std::thread::sleep;
 
     fn make_tracker(
         should_stop_init: bool,
