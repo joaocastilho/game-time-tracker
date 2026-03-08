@@ -303,10 +303,6 @@ fn main() {
         None => {}
     }
 
-    if let Err(e) = install_logic(true) {
-        error!("Failed to bootstrap installation: {}", e);
-    }
-
     info!("Starting Game Time Tracker daemon mapped to Tauri.");
 
     let active_count = Arc::new(AtomicUsize::new(0));
