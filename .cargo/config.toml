@@ -1,0 +1,6 @@
+[alias]
+# Run the full CI suite locally
+ci = "run --bin ci"
+
+# A shorter command for building safely
+b = "run --bin ci"

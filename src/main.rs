@@ -256,13 +256,12 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_ui_data, add_game, remove_game])
-        .on_window_event(|window, event| match event {
-            // When the user clicks the "X" button, hide the window instead of killing the app
-            tauri::WindowEvent::CloseRequested { api, .. } => {
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // When the user clicks the "X" button, hide the window instead of killing the app
                 let _ = window.hide();
                 api.prevent_close();
             }
-            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
