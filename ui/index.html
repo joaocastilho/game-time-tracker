@@ -301,7 +301,7 @@
                 if (activeSession) {
                     // Start time is ISO 8601 string, parse to UTC timestamp
                     const startTime = new Date(activeSession.start).getTime() / 1000;
-                    const elapsed = Math.max(0, now - startTime);
+                    const elapsed = Math.floor(Math.max(0, now - startTime));
                     totalSecs += elapsed;
                 }
 
