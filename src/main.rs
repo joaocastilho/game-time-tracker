@@ -12,6 +12,8 @@ use log::{error, info};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::os::windows::ffi::OsStrExt;
+use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -126,33 +128,88 @@ fn calculate_md5(path: &Path) -> Result<String, anyhow::Error> {
 fn add_to_path(dir: &Path) -> Result<(), anyhow::Error> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env = hkcu.open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)?;
-    let current_path: String = env.get_value("Path").unwrap_or_default();
+    
+    // Read raw to include any nulls or corruption
+    let current_path = if let Ok(raw) = env.get_raw_value("Path") {
+        String::from_utf8_lossy(&raw.bytes).to_string()
+    } else {
+        String::new()
+    };
+    
+    let cleaned_path = current_path.replace('\0', "");
     let dir_str = dir.to_string_lossy();
+    let normalized_dir = dir_str.trim_end_matches('\\').to_string();
 
-    if !current_path.split(';').any(|p| p == dir_str) {
-        let new_path = if current_path.is_empty() {
-            dir_str.to_string()
-        } else {
-            format!("{};{}", current_path, dir_str)
-        };
-        env.set_value("Path", &new_path)?;
-        info!("Added {} to PATH.", dir_str);
-    }
+    let mut parts: Vec<String> = cleaned_path.split(';')
+        .map(|s| s.trim().to_string())
+        .filter(|s| {
+            let s_clean = s.trim_end_matches('\\');
+            !s_clean.is_empty() && !s_clean.eq_ignore_ascii_case(&normalized_dir) && !s_clean.to_lowercase().contains("game-time-tracker")
+        })
+        .collect();
+    
+    parts.push(normalized_dir);
+    let new_path = parts.join(";");
+    
+    // Use REG_EXPAND_SZ with UTF-16 encoding for Windows compatibility
+    let utf16_bytes: Vec<u8> = std::ffi::OsString::from(new_path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
+
+    env.set_raw_value("Path", &winreg::RegValue {
+        vtype: winreg::enums::RegType::REG_EXPAND_SZ,
+        bytes: utf16_bytes,
+    })?;
+    
+    let _ = std::process::Command::new("powershell")
+        .args(["-Command", "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')"])
+        .creation_flags(0x08000000)
+        .spawn();
+
     Ok(())
 }
 
 fn remove_from_path(dir: &Path) -> Result<(), anyhow::Error> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env = hkcu.open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)?;
-    let current_path: String = env.get_value("Path").unwrap_or_default();
+    
+    let current_path = if let Ok(raw) = env.get_raw_value("Path") {
+        String::from_utf8_lossy(&raw.bytes).to_string()
+    } else {
+        String::new()
+    };
+    
+    let cleaned_path = current_path.replace('\0', "");
     let dir_str = dir.to_string_lossy();
+    let normalized_dir = dir_str.trim_end_matches('\\').to_string();
 
-    let parts: Vec<&str> = current_path.split(';').filter(|&p| p != dir_str).collect();
+    let parts: Vec<String> = cleaned_path.split(';')
+        .map(|s| s.trim().to_string())
+        .filter(|s| {
+            let s_clean = s.trim_end_matches('\\');
+            !s_clean.is_empty() && !s_clean.eq_ignore_ascii_case(&normalized_dir) && !s_clean.to_lowercase().contains("game-time-tracker")
+        })
+        .collect();
+    
     let new_path = parts.join(";");
+    if new_path != cleaned_path {
+        let utf16_bytes: Vec<u8> = std::ffi::OsString::from(new_path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .flat_map(|u| u.to_le_bytes())
+            .collect();
 
-    if new_path != current_path {
-        env.set_value("Path", &new_path)?;
-        info!("Removed {} from PATH.", dir_str);
+        env.set_raw_value("Path", &winreg::RegValue {
+            vtype: winreg::enums::RegType::REG_EXPAND_SZ,
+            bytes: utf16_bytes,
+        })?;
+        
+        let _ = std::process::Command::new("powershell")
+            .args(["-Command", "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')"])
+            .creation_flags(0x08000000)
+            .spawn();
     }
     Ok(())
 }
