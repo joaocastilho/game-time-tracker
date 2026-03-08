@@ -262,7 +262,8 @@
         function formatDuration(totalSecs) {
             const hours = Math.floor(totalSecs / 3600);
             const minutes = Math.floor((totalSecs % 3600) / 60);
-            return `${hours}h ${minutes}m`;
+            const seconds = totalSecs % 60;
+            return `${hours}h ${minutes}m ${seconds}s`;
         }
 
         async function loadGames() {
