@@ -9,7 +9,6 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
-use std::thread::sleep;
 use std::time::Duration;
 
 pub struct AppTracker {

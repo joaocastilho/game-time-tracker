@@ -1,0 +1,93 @@
+   Compiling game-time-tracker v1.0.0 (C:\home\code\game-time-tracker)
+warning: unused import: `std::fs::File`
+ --> src\bin\gen_icons.rs:2:5
+  |
+2 | use std::fs::File;
+  |     ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `game-time-tracker` (bin "gen_icons") generated 1 warning (run `cargo fix --bin "gen_icons" -p game-time-tracker` to apply 1 suggestion)
+error[E0432]: unresolved import `eframe`
+ --> src\bin\test_eframe.rs:1:5
+  |
+1 | use eframe::egui;
+  |     ^^^^^^ use of unresolved module or unlinked crate `eframe`
+  |
+  = help: if you wanted to use a crate named `eframe`, use `cargo add eframe` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `eframe`
+  --> src\bin\test_eframe.rs:13:19
+   |
+13 |     let options = eframe::NativeOptions::default();
+   |                   ^^^^^^ use of unresolved module or unlinked crate `eframe`
+   |
+   = help: if you wanted to use a crate named `eframe`, use `cargo add eframe` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `eframe`
+ --> src\bin\test_eframe.rs:5:6
+  |
+5 | impl eframe::App for App {
+  |      ^^^^^^ use of unresolved module or unlinked crate `eframe`
+  |
+  = help: if you wanted to use a crate named `eframe`, use `cargo add eframe` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `eframe`
+ --> src\bin\test_eframe.rs:6:60
+  |
+6 |     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+  |                                                            ^^^^^^ use of unresolved module or unlinked crate `eframe`
+  |
+  = help: if you wanted to use a crate named `eframe`, use `cargo add eframe` to add it to your `Cargo.toml`
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `eframe`
+  --> src\bin\test_eframe.rs:14:18
+   |
+14 |     let result = eframe::run_native(
+   |                  ^^^^^^ use of unresolved module or unlinked crate `eframe`
+   |
+   = help: if you wanted to use a crate named `eframe`, use `cargo add eframe` to add it to your `Cargo.toml`
+
+Some errors have detailed explanations: E0432, E0433.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `game-time-tracker` (bin "test_eframe") due to 5 previous errors
+warning: build failed, waiting for other jobs to finish...
+warning: unused import: `anyhow::Context`
+  --> src\main.rs:10:5
+   |
+10 | use anyhow::Context;
+   |     ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0382]: use of moved value: `should_stop`
+   --> src\main.rs:276:19
+    |
+184 |     let should_stop = Arc::new(AtomicBool::new(false));
+    |         ----------- move occurs because `should_stop` has type `Arc<AtomicBool>`, which does not implement the `Copy` trait
+...
+188 |         .setup(move |app| {
+    |                ---------- value moved into closure here
+...
+233 |             let should_stop_tracker = should_stop.clone();
+    |                                       ----------- variable moved due to use in closure
+...
+276 |     tauri_app.run(move |_app_handle, event| {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^ value used here after move
+...
+279 |             should_stop.store(true, Ordering::SeqCst);
+    |             ----------- use occurs due to use in closure
+    |
+help: consider cloning the value before moving it into the closure
+    |
+187 ~     let value = should_stop.clone();
+188 ~     let tauri_app = tauri::Builder::default()
+189 |         .setup(move |app| {
+...
+233 |             let active_count_tracker = active_count.clone();
+234 ~             let should_stop_tracker = value.clone();
+    |
+
+For more information about this error, try `rustc --explain E0382`.
+warning: `game-time-tracker` (bin "gtt") generated 1 warning
+error: could not compile `game-time-tracker` (bin "gtt") due to 1 previous error; 1 warning emitted

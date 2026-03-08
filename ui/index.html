@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Time Tracker</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --surface-color: #2d2d2d;
+            --text-color: #e0e0e0;
+            --primary-color: #4CAF50;
+            --primary-hover: #45a049;
+            --danger-color: #f44336;
+            --danger-hover: #d32f2f;
+            --border-color: #404040;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        h1, h2 {
+            margin: 0;
+            font-weight: 500;
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            color: #fff;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h2 {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+
+        .header-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        button {
+            background-color: var(--surface-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background-color: #3d3d3d;
+        }
+
+        button.primary {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+        }
+
+        button.primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.danger {
+            background-color: transparent;
+            color: var(--danger-color);
+            border: 1px solid var(--danger-color);
+        }
+
+        button.danger:hover {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .game-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        /* Scrollbar styles */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--surface-color);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3d3d3d;
+        }
+
+        .game-item {
+            background-color: var(--surface-color);
+            border-radius: 6px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .game-title-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .game-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .running-badge {
+            background-color: rgba(76, 175, 80, 0.2);
+            color: var(--primary-color);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .running-badge::before {
+            content: "▶";
+            font-size: 10px;
+        }
+
+        .game-details {
+            font-size: 0.9rem;
+            color: #aaa;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .game-stat {
+            font-family: monospace;
+        }
+
+        .add-game-section {
+            background-color: var(--surface-color);
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .input-group label {
+            width: 80px;
+            font-size: 0.95rem;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .error-message {
+            color: var(--danger-color);
+            font-size: 0.9rem;
+            min-height: 20px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #888;
+            background-color: var(--surface-color);
+            border-radius: 6px;
+            border: 1px dashed var(--border-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="header-controls">
+        <h1>Game Time Tracker</h1>
+        <button id="refresh-btn">↻ Refresh</button>
+    </div>
+
+    <div>
+        <h2>Tracked Games</h2>
+        <div id="game-list" class="game-list">
+            <!-- Games injected here -->
+            <div class="empty-state">Loading games...</div>
+        </div>
+    </div>
+
+    <div class="add-game-section">
+        <h2>Add Game</h2>
+        <div class="input-group">
+            <label for="game-name">Name:</label>
+            <input type="text" id="game-name" placeholder="E.g., Minecraft">
+        </div>
+        <div class="input-group">
+            <label for="game-exec">Executable:</label>
+            <input type="text" id="game-exec" placeholder="E.g., javaw.exe or C:\Games\game.exe">
+        </div>
+        <div id="error-msg" class="error-message"></div>
+        <button id="add-btn" class="primary">➕ Add Game</button>
+    </div>
+
+    <script type="module">
+        const { invoke } = window.__TAURI__.core;
+        
+        // DOM Elements
+        const gameListEl = document.getElementById('game-list');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const addBtn = document.getElementById('add-btn');
+        const nameInput = document.getElementById('game-name');
+        const execInput = document.getElementById('game-exec');
+        const errorMsg = document.getElementById('error-msg');
+
+        let refreshInterval;
+
+        function formatDuration(totalSecs) {
+            const hours = Math.floor(totalSecs / 3600);
+            const minutes = Math.floor((totalSecs % 3600) / 60);
+            return `${hours}h ${minutes}m`;
+        }
+
+        async function loadGames() {
+            try {
+                const data = await invoke('get_ui_data');
+                renderGames(data.games, data.sessions, data.state);
+            } catch (e) {
+                console.error('Failed to load games:', e);
+                gameListEl.innerHTML = `<div class="empty-state" style="color: var(--danger-color)">Failed to load data: ${e}</div>`;
+            }
+        }
+
+        function renderGames(games, sessionsMap, state) {
+            if (!games || games.length === 0) {
+                gameListEl.innerHTML = '<div class="empty-state">No games tracked yet. Add one below!</div>';
+                return;
+            }
+
+            const now = Math.floor(Date.now() / 1000);
+            
+            gameListEl.innerHTML = games.map((game, idx) => {
+                // Calculate total time
+                let totalSecs = 0;
+                
+                // Add historical sessions
+                const gameSessions = sessionsMap[game.id] || [];
+                for (const session of gameSessions) {
+                    totalSecs += session.duration_secs;
+                }
+                
+                // Add active session if running
+                const activeSession = state.active_sessions[game.id];
+                const isRunning = !!activeSession;
+                
+                if (activeSession) {
+                    // Start time is ISO 8601 string, parse to UTC timestamp
+                    const startTime = new Date(activeSession.start).getTime() / 1000;
+                    const elapsed = Math.max(0, now - startTime);
+                    totalSecs += elapsed;
+                }
+
+                return `
+                    <div class="game-item">
+                        <div class="game-header">
+                            <div class="game-title-area">
+                                <span class="game-name">${escapeHtml(game.name)}</span>
+                                ${isRunning ? '<span class="running-badge">Running</span>' : ''}
+                            </div>
+                            <button class="danger remove-btn" data-id="${escapeHtml(game.id)}">🗑 Remove</button>
+                        </div>
+                        <div class="game-details">
+                            <span class="game-stat">ID: ${escapeHtml(game.id)} | Exec: ${escapeHtml(game.executable)}</span>
+                            <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong></span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Attach remove listeners
+            document.querySelectorAll('.remove-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    if (confirm('Are you sure you want to remove this game?')) {
+                        try {
+                            await invoke('remove_game', { id });
+                            loadGames();
+                        } catch (err) {
+                            errorMsg.textContent = `Failed to remove: ${err}`;
+                        }
+                    }
+                });
+            });
+        }
+
+        async function addGame() {
+            const name = nameInput.value.trim();
+            const exec = execInput.value.trim();
+            
+            errorMsg.textContent = '';
+            
+            if (!name || !exec) {
+                errorMsg.textContent = 'All fields must be filled out.';
+                return;
+            }
+
+            try {
+                // We let the backend handle ID generation & validation
+                await invoke('add_game', { name, executable: exec });
+                nameInput.value = '';
+                execInput.value = '';
+                loadGames();
+            } catch (err) {
+                errorMsg.textContent = err;
+            }
+        }
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                 .toString()
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        // Setup event listeners
+        refreshBtn.addEventListener('click', loadGames);
+        addBtn.addEventListener('click', addGame);
+        
+        execInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addGame();
+        });
+
+        // Initial load
+        loadGames();
+        
+        // Setup 1-second refresh interval for "Running" timer just like the native UI did
+        refreshInterval = setInterval(loadGames, 1000);
+        
+        // Clean up interval when window is hidden/closed (Tauri handles the window lifecycle natively
+        // but it's good practice)
+        window.addEventListener('unload', () => clearInterval(refreshInterval));
+    </script>
+</body>
+</html>
