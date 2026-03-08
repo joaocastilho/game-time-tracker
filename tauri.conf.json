@@ -12,6 +12,7 @@
         "withGlobalTauri": true,
         "windows": [
             {
+                "label": "main",
                 "title": "Game Time Tracker - Management",
                 "width": 600,
                 "height": 500,
@@ -21,10 +22,6 @@
         ],
         "security": {
             "csp": null
-        },
-        "trayIcon": {
-            "iconPath": "icons/icon.png",
-            "tooltip": "Game Time Tracker"
         }
     },
     "bundle": {
