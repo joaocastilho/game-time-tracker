@@ -7,7 +7,6 @@ pub mod process;
 pub mod store;
 pub mod tracker;
 
-use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::{error, info};
 use std::collections::HashMap;
