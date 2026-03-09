@@ -11,6 +11,8 @@ use clap::{Parser, Subcommand};
 use log::{error, info};
 use std::collections::HashMap;
 use std::env;
+use std::fs;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{
@@ -33,9 +35,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Install the tracker as a background service/startup process
     Install,
-    /// Uninstall the tracker
     Uninstall,
 }
 
@@ -115,32 +115,114 @@ fn remove_game(id: String) -> Result<(), String> {
     Ok(())
 }
 
-fn handle_cli(cli: Cli) -> Option<()> {
-    match &cli.command {
-        Some(Commands::Install) => {
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            let path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
-            if let Ok(key) = hkcu.open_subkey_with_flags(path, KEY_SET_VALUE) {
-                if let Ok(exe) = env::current_exe() {
-                    if let Some(exe_str) = exe.to_str() {
-                        let _ = key.set_value("GameTimeTracker", &exe_str);
-                        println!("Successfully installed auto-start registry key.");
-                    }
-                }
-            }
-            Some(())
-        }
-        Some(Commands::Uninstall) => {
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            let path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
-            if let Ok(key) = hkcu.open_subkey_with_flags(path, KEY_SET_VALUE) {
-                let _ = key.delete_value("GameTimeTracker");
-                println!("Successfully uninstalled auto-start registry key.");
-            }
-            Some(())
-        }
-        None => None,
+fn calculate_md5(path: &Path) -> Result<String, anyhow::Error> {
+    let mut file = fs::File::open(path)?;
+    let mut buffer = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut buffer)?;
+    let digest = md5::compute(buffer);
+    Ok(format!("{:x}", digest))
+}
+
+fn add_to_path(dir: &Path) -> Result<(), anyhow::Error> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let env = hkcu.open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)?;
+    let current_path: String = env.get_value("Path").unwrap_or_default();
+    let dir_str = dir.to_string_lossy();
+
+    if !current_path.split(';').any(|p| p == dir_str) {
+        let new_path = if current_path.is_empty() {
+            dir_str.to_string()
+        } else {
+            format!("{};{}", current_path, dir_str)
+        };
+        env.set_value("Path", &new_path)?;
+        info!("Added {} to PATH.", dir_str);
     }
+    Ok(())
+}
+
+fn remove_from_path(dir: &Path) -> Result<(), anyhow::Error> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let env = hkcu.open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)?;
+    let current_path: String = env.get_value("Path").unwrap_or_default();
+    let dir_str = dir.to_string_lossy();
+
+    let parts: Vec<&str> = current_path.split(';').filter(|&p| p != dir_str).collect();
+    let new_path = parts.join(";");
+
+    if new_path != current_path {
+        env.set_value("Path", &new_path)?;
+        info!("Removed {} from PATH.", dir_str);
+    }
+    Ok(())
+}
+
+fn install_logic(silent: bool) -> Result<(), anyhow::Error> {
+    let current_exe = env::current_exe()?;
+    let install_dir = config::bin_dir();
+    let target_exe = install_dir.join("gtt.exe");
+
+    let mut needs_copy = false;
+
+    if !target_exe.exists() {
+        needs_copy = true;
+    } else {
+        let current_hash = calculate_md5(&current_exe)?;
+        let target_hash = calculate_md5(&target_exe)?;
+        if current_hash != target_hash {
+            if !silent {
+                println!("Version mismatch detected, updating installed executable.");
+            }
+            needs_copy = true;
+        }
+    }
+
+    if needs_copy {
+        if !install_dir.exists() {
+            fs::create_dir_all(&install_dir)?;
+        }
+        
+        if current_exe != target_exe {
+            if !silent {
+                println!("Installing/Updating executable to: {}", target_exe.display());
+            }
+            fs::copy(&current_exe, &target_exe)?;
+        }
+    }
+
+    // Ensure startup registry key exists and points to the target_exe
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run_path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
+    if let Ok(key) = hkcu.open_subkey_with_flags(run_path, KEY_SET_VALUE) {
+        if let Some(exe_str) = target_exe.to_str() {
+            let _ = key.set_value("GameTimeTracker", &exe_str);
+        }
+    }
+
+    // Add to PATH
+    let _ = add_to_path(&install_dir);
+
+    if !silent {
+        println!("Successfully installed.");
+    }
+
+    Ok(())
+}
+
+fn uninstall_logic() -> Result<(), anyhow::Error> {
+    // Remove from PATH
+    let install_dir = config::bin_dir();
+    let _ = remove_from_path(&install_dir);
+
+    // Remove startup key
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run_path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
+    if let Ok(key) = hkcu.open_subkey_with_flags(run_path, KEY_SET_VALUE) {
+        let _ = key.delete_value("GameTimeTracker");
+    }
+
+    println!("Successfully uninstalled. You can now manually delete the data folder if desired.");
+    Ok(())
 }
 
 
@@ -148,8 +230,24 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 
     let cli = Cli::parse();
-    if handle_cli(cli).is_some() {
-        return;
+    match &cli.command {
+        Some(Commands::Install) => {
+            if let Err(e) = install_logic(false) {
+                error!("Installation failed: {}", e);
+            }
+            return;
+        }
+        Some(Commands::Uninstall) => {
+            if let Err(e) = uninstall_logic() {
+                error!("Uninstallation failed: {}", e);
+            }
+            return;
+        }
+        None => {}
+    }
+
+    if let Err(e) = install_logic(true) {
+        error!("Failed to bootstrap installation: {}", e);
     }
 
     info!("Starting Game Time Tracker daemon mapped to Tauri.");

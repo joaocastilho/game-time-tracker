@@ -23,6 +23,10 @@ pub fn data_dir() -> PathBuf {
     path
 }
 
+pub fn bin_dir() -> PathBuf {
+    data_dir()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

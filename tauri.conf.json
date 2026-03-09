@@ -27,6 +27,7 @@
     "bundle": {
         "active": true,
         "targets": "all",
+        "publisher": "Joao Castilho",
         "icon": [
             "icons/icon.png"
         ]
