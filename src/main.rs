@@ -128,29 +128,32 @@ fn calculate_md5(path: &Path) -> Result<String, anyhow::Error> {
 fn add_to_path(dir: &Path) -> Result<(), anyhow::Error> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env = hkcu.open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)?;
-    
+
     // Read raw to include any nulls or corruption
     let current_path = if let Ok(raw) = env.get_raw_value("Path") {
         String::from_utf8_lossy(&raw.bytes).to_string()
     } else {
         String::new()
     };
-    
+
     let cleaned_path = current_path.replace('\0', "");
     let dir_str = dir.to_string_lossy();
     let normalized_dir = dir_str.trim_end_matches('\\').to_string();
 
-    let mut parts: Vec<String> = cleaned_path.split(';')
+    let mut parts: Vec<String> = cleaned_path
+        .split(';')
         .map(|s| s.trim().to_string())
         .filter(|s| {
             let s_clean = s.trim_end_matches('\\');
-            !s_clean.is_empty() && !s_clean.eq_ignore_ascii_case(&normalized_dir) && !s_clean.to_lowercase().contains("game-time-tracker")
+            !s_clean.is_empty()
+                && !s_clean.eq_ignore_ascii_case(&normalized_dir)
+                && !s_clean.to_lowercase().contains("game-time-tracker")
         })
         .collect();
-    
+
     parts.push(normalized_dir);
     let new_path = parts.join(";");
-    
+
     // Use REG_EXPAND_SZ with UTF-16 encoding for Windows compatibility
     let utf16_bytes: Vec<u8> = std::ffi::OsString::from(new_path)
         .encode_wide()
@@ -158,11 +161,14 @@ fn add_to_path(dir: &Path) -> Result<(), anyhow::Error> {
         .flat_map(|u| u.to_le_bytes())
         .collect();
 
-    env.set_raw_value("Path", &winreg::RegValue {
-        vtype: winreg::enums::RegType::REG_EXPAND_SZ,
-        bytes: utf16_bytes,
-    })?;
-    
+    env.set_raw_value(
+        "Path",
+        &winreg::RegValue {
+            vtype: winreg::enums::RegType::REG_EXPAND_SZ,
+            bytes: utf16_bytes,
+        },
+    )?;
+
     let _ = std::process::Command::new("powershell")
         .args(["-Command", "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')"])
         .creation_flags(0x08000000)
@@ -174,25 +180,28 @@ fn add_to_path(dir: &Path) -> Result<(), anyhow::Error> {
 fn remove_from_path(dir: &Path) -> Result<(), anyhow::Error> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env = hkcu.open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)?;
-    
+
     let current_path = if let Ok(raw) = env.get_raw_value("Path") {
         String::from_utf8_lossy(&raw.bytes).to_string()
     } else {
         String::new()
     };
-    
+
     let cleaned_path = current_path.replace('\0', "");
     let dir_str = dir.to_string_lossy();
     let normalized_dir = dir_str.trim_end_matches('\\').to_string();
 
-    let parts: Vec<String> = cleaned_path.split(';')
+    let parts: Vec<String> = cleaned_path
+        .split(';')
         .map(|s| s.trim().to_string())
         .filter(|s| {
             let s_clean = s.trim_end_matches('\\');
-            !s_clean.is_empty() && !s_clean.eq_ignore_ascii_case(&normalized_dir) && !s_clean.to_lowercase().contains("game-time-tracker")
+            !s_clean.is_empty()
+                && !s_clean.eq_ignore_ascii_case(&normalized_dir)
+                && !s_clean.to_lowercase().contains("game-time-tracker")
         })
         .collect();
-    
+
     let new_path = parts.join(";");
     if new_path != cleaned_path {
         let utf16_bytes: Vec<u8> = std::ffi::OsString::from(new_path)
@@ -201,11 +210,14 @@ fn remove_from_path(dir: &Path) -> Result<(), anyhow::Error> {
             .flat_map(|u| u.to_le_bytes())
             .collect();
 
-        env.set_raw_value("Path", &winreg::RegValue {
-            vtype: winreg::enums::RegType::REG_EXPAND_SZ,
-            bytes: utf16_bytes,
-        })?;
-        
+        env.set_raw_value(
+            "Path",
+            &winreg::RegValue {
+                vtype: winreg::enums::RegType::REG_EXPAND_SZ,
+                bytes: utf16_bytes,
+            },
+        )?;
+
         let _ = std::process::Command::new("powershell")
             .args(["-Command", "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')"])
             .creation_flags(0x08000000)
@@ -238,10 +250,13 @@ fn install_logic(silent: bool) -> Result<(), anyhow::Error> {
         if !install_dir.exists() {
             fs::create_dir_all(&install_dir)?;
         }
-        
+
         if current_exe != target_exe {
             if !silent {
-                println!("Installing/Updating executable to: {}", target_exe.display());
+                println!(
+                    "Installing/Updating executable to: {}",
+                    target_exe.display()
+                );
             }
             fs::copy(&current_exe, &target_exe)?;
         }
@@ -282,7 +297,6 @@ fn uninstall_logic() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 
@@ -312,12 +326,10 @@ fn main() {
 
     let tauri_app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = app
-                .get_webview_window("main")
-                .map(|w| {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                });
+            let _ = app.get_webview_window("main").map(|w| {
+                let _ = w.show();
+                let _ = w.set_focus();
+            });
         }))
         .setup(move |app| {
             // Setup system tray menu
