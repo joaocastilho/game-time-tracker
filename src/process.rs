@@ -13,9 +13,7 @@ fn strip_exe(name: &str) -> &str {
 
 impl ProcessMonitor {
     pub fn new() -> Self {
-        Self {
-            sys: System::new_all(),
-        }
+        Self { sys: System::new() }
     }
 
     pub fn is_running(&mut self, executable_name: &str) -> bool {
@@ -26,8 +24,8 @@ impl ProcessMonitor {
         let target = strip_exe(&target_lower);
 
         for process in self.sys.processes().values() {
-            if let Some(name) = process.name().to_str() {
-                let name_lower = name.to_lowercase();
+            let name_lower = process.name().to_str().map(|s| s.to_lowercase());
+            if let Some(name_lower) = name_lower {
                 if strip_exe(&name_lower) == target {
                     return true;
                 }

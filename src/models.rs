@@ -11,9 +11,8 @@ pub struct Game {
 
 impl Game {
     pub fn generate_id(name: &str) -> String {
-        // Map non-alphanumeric chars to '-', then collapse consecutive dashes
-        // and strip any leading/trailing ones.
-        name.trim()
+        let id = name
+            .trim()
             .to_lowercase()
             .chars()
             .map(|c| if c.is_alphanumeric() { c } else { '-' })
@@ -21,7 +20,13 @@ impl Game {
             .split('-')
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
-            .join("-")
+            .join("-");
+
+        if id.is_empty() {
+            "unnamed-game".to_string()
+        } else {
+            id
+        }
     }
 }
 
@@ -120,7 +125,7 @@ mod tests {
     #[test]
     fn test_generate_id_all_non_alphanumeric() {
         let id = Game::generate_id("!@#$%");
-        assert!(id.is_empty());
+        assert_eq!(id, "unnamed-game");
     }
 
     #[test]

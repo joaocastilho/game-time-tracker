@@ -60,6 +60,16 @@ pub fn icon_png() -> Vec<u8> {
     png_bytes
 }
 
+pub fn icon_tauri_image() -> tauri::image::Image<'static> {
+    match tauri::image::Image::from_bytes(&icon_png()) {
+        Ok(img) => img,
+        Err(e) => {
+            log::error!("Failed to create icon from PNG: {}", e);
+            tauri::image::Image::new(&[], 1, 1)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

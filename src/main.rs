@@ -23,6 +23,15 @@ use tauri::{
     Manager,
 };
 
+fn normalize_windows_path(path: &Path) -> String {
+    let path_str = path.to_string_lossy();
+    if let Some(stripped) = path_str.strip_prefix("\\\\?\\") {
+        stripped.to_string()
+    } else {
+        path_str.to_string()
+    }
+}
+
 use models::{Game, Session, State};
 use tracker::AppTracker;
 use winreg::enums::*;
@@ -53,13 +62,16 @@ struct UiData {
 fn get_ui_data() -> Result<UiData, String> {
     let dir = config::data_dir();
     let games = store::load(dir.join("games.json"))
-        .unwrap_or(None)
+        .ok()
+        .flatten()
         .unwrap_or_default();
     let sessions = store::load(dir.join("sessions.json"))
-        .unwrap_or(None)
+        .ok()
+        .flatten()
         .unwrap_or_default();
     let state = store::load(dir.join("state.json"))
-        .unwrap_or(None)
+        .ok()
+        .flatten()
         .unwrap_or_default();
 
     Ok(UiData {
@@ -93,6 +105,14 @@ fn add_game(name: String, executable: String) -> Result<(), String> {
         return Err("Game already exists".into());
     }
 
+    if trimmed_exec.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
+        return Err("Executable name contains invalid characters".into());
+    }
+
+    if !trimmed_exec.to_lowercase().ends_with(".exe") {
+        return Err("Executable must have .exe extension".into());
+    }
+
     games.push(Game {
         id: game_id,
         name: trimmed_name,
@@ -107,6 +127,8 @@ fn add_game(name: String, executable: String) -> Result<(), String> {
 fn remove_game(id: String) -> Result<(), String> {
     let dir = config::data_dir();
     let games_path = dir.join("games.json");
+    let state_path = dir.join("state.json");
+
     let mut games: Vec<Game> = store::load(&games_path)
         .map_err(|e| format!("Load error: {}", e))?
         .unwrap_or_default();
@@ -114,6 +136,13 @@ fn remove_game(id: String) -> Result<(), String> {
     games.retain(|g| g.id != id);
 
     store::save(&games, &games_path).map_err(|e| format!("Save error: {}", e))?;
+
+    if let Ok(Some(mut state)) = store::load::<models::State, _>(&state_path) {
+        if state.active_sessions.remove(&id).is_some() {
+            let _ = store::save(&state, &state_path);
+        }
+    }
+
     Ok(())
 }
 
@@ -145,9 +174,12 @@ fn add_to_path(dir: &Path) -> Result<(), anyhow::Error> {
         .map(|s| s.trim().to_string())
         .filter(|s| {
             let s_clean = s.trim_end_matches('\\');
-            !s_clean.is_empty()
-                && !s_clean.eq_ignore_ascii_case(&normalized_dir)
-                && !s_clean.to_lowercase().contains("game-time-tracker")
+            let s_normalized = s_clean.trim_end_matches('\\');
+            !s_normalized.is_empty()
+                && !s_normalized.eq_ignore_ascii_case(&normalized_dir)
+                && !s_normalized
+                    .to_lowercase()
+                    .starts_with(&normalized_dir.to_lowercase())
         })
         .collect();
 
@@ -196,9 +228,12 @@ fn remove_from_path(dir: &Path) -> Result<(), anyhow::Error> {
         .map(|s| s.trim().to_string())
         .filter(|s| {
             let s_clean = s.trim_end_matches('\\');
-            !s_clean.is_empty()
-                && !s_clean.eq_ignore_ascii_case(&normalized_dir)
-                && !s_clean.to_lowercase().contains("game-time-tracker")
+            let s_normalized = s_clean.trim_end_matches('\\');
+            !s_normalized.is_empty()
+                && !s_normalized.eq_ignore_ascii_case(&normalized_dir)
+                && !s_normalized
+                    .to_lowercase()
+                    .starts_with(&normalized_dir.to_lowercase())
         })
         .collect();
 
@@ -231,11 +266,14 @@ fn install_logic(silent: bool) -> Result<(), anyhow::Error> {
     let install_dir = config::bin_dir();
     let target_exe = install_dir.join("gtt.exe");
 
+    let current_exe_str = normalize_windows_path(&current_exe);
+    let target_exe_str = normalize_windows_path(&target_exe);
+
     let mut needs_copy = false;
 
     if !target_exe.exists() {
         needs_copy = true;
-    } else {
+    } else if current_exe_str != target_exe_str {
         let current_hash = calculate_md5(&current_exe)?;
         let target_hash = calculate_md5(&target_exe)?;
         if current_hash != target_hash {
@@ -251,7 +289,7 @@ fn install_logic(silent: bool) -> Result<(), anyhow::Error> {
             fs::create_dir_all(&install_dir)?;
         }
 
-        if current_exe != target_exe {
+        if current_exe_str != target_exe_str {
             if !silent {
                 println!(
                     "Installing/Updating executable to: {}",
@@ -266,9 +304,8 @@ fn install_logic(silent: bool) -> Result<(), anyhow::Error> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let run_path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
     if let Ok(key) = hkcu.open_subkey_with_flags(run_path, KEY_SET_VALUE) {
-        if let Some(exe_str) = target_exe.to_str() {
-            let _ = key.set_value("GameTimeTracker", &exe_str);
-        }
+        let exe_str = normalize_windows_path(&target_exe);
+        let _ = key.set_value("GameTimeTracker", &exe_str);
     }
 
     // Add to PATH
@@ -290,7 +327,7 @@ fn uninstall_logic() -> Result<(), anyhow::Error> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let run_path = r#"Software\Microsoft\Windows\CurrentVersion\Run"#;
     if let Ok(key) = hkcu.open_subkey_with_flags(run_path, KEY_SET_VALUE) {
-        let _ = key.delete_value("GameTimeTracker");
+        key.delete_value("GameTimeTracker").ok();
     }
 
     println!("Successfully uninstalled. You can now manually delete the data folder if desired.");
@@ -344,10 +381,15 @@ fn main() {
 
             let active_clone = active_count.clone();
 
+            let tray_icon = app
+                .default_window_icon()
+                .cloned()
+                .unwrap_or_else(|| icon::icon_tauri_image());
+
             let tray = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Game Time Tracker")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::DoubleClick { .. } = event {
                         let app = tray.app_handle();
@@ -386,10 +428,14 @@ fn main() {
 
             // Updating tray tooltip based on active count (polling task)
             let tray_handle = tray.clone();
+            let should_stop_tooltip = should_stop.clone();
             std::thread::spawn(move || {
                 let mut last = 0;
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(100));
+                    if should_stop_tooltip.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let current = active_clone.load(Ordering::Relaxed);
                     if current != last {
                         last = current;
@@ -410,7 +456,10 @@ fn main() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building tauri application");
+        .unwrap_or_else(|e| {
+            error!("Failed to build tauri application: {}", e);
+            std::process::exit(1);
+        });
 
     tauri_app.run(move |_app_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } = event {

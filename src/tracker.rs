@@ -3,7 +3,7 @@ use crate::models::{Game, Session, State};
 use crate::process::ProcessMonitor;
 use crate::store::{self, StoreError};
 use chrono::Utc;
-use log::info;
+use log::{error, info};
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -16,6 +16,17 @@ pub struct AppTracker {
     active_count: Arc<AtomicUsize>,
     should_stop: Arc<std::sync::atomic::AtomicBool>,
     stop_rx: std::sync::mpsc::Receiver<()>,
+}
+
+fn prune_sessions(sessions: &mut HashMap<String, Vec<Session>>) {
+    const MAX_SESSIONS_PER_GAME: usize = 100;
+    for game_sessions in sessions.values_mut() {
+        if game_sessions.len() > MAX_SESSIONS_PER_GAME {
+            game_sessions.sort_by_key(|s| s.start);
+            game_sessions.reverse();
+            game_sessions.truncate(MAX_SESSIONS_PER_GAME);
+        }
+    }
 }
 
 impl AppTracker {
@@ -50,6 +61,8 @@ impl AppTracker {
         let mut all_sessions: HashMap<String, Vec<Session>> =
             store::load(&sessions_path)?.unwrap_or_default();
 
+        prune_sessions(&mut all_sessions);
+
         let end_time = state.last_seen.unwrap_or_else(Utc::now);
 
         for (game_id, mut session) in state.active_sessions.into_iter() {
@@ -68,7 +81,9 @@ impl AppTracker {
     }
 
     pub fn run(&mut self) -> Result<(), StoreError> {
-        self.recover_pending_sessions()?;
+        if let Err(e) = self.recover_pending_sessions() {
+            error!("Failed to recover pending sessions: {}", e);
+        }
 
         let data_dir = data_dir();
         let games_path = data_dir.join("games.json");
@@ -177,11 +192,16 @@ impl AppTracker {
             }
 
             if state_changed {
-                store::save(&state, &state_path)?;
+                if let Err(e) = store::save(&state, &state_path) {
+                    error!("Failed to save state: {}", e);
+                }
             }
             if sessions_changed {
-                if let Some(sessions) = all_sessions {
-                    store::save(&sessions, &sessions_path)?;
+                if let Some(mut sessions) = all_sessions {
+                    prune_sessions(&mut sessions);
+                    if let Err(e) = store::save(&sessions, &sessions_path) {
+                        error!("Failed to save sessions: {}", e);
+                    }
                 }
             }
 

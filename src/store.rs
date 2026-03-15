@@ -35,9 +35,18 @@ pub fn save<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<(), Store
     let json = serde_json::to_string_pretty(data)?;
     std::fs::write(&tmp_path, json)?;
 
-    if let Err(e) = std::fs::rename(&tmp_path, path) {
-        let _ = std::fs::remove_file(&tmp_path);
-        return Err(e.into());
+    let result = std::fs::rename(&tmp_path, path);
+
+    if let Err(e) = result {
+        let is_cross_device = e.kind() == std::io::ErrorKind::CrossesDevices;
+
+        if is_cross_device {
+            std::fs::copy(&tmp_path, path)?;
+            let _ = std::fs::remove_file(&tmp_path);
+        } else {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(e.into());
+        }
     }
 
     Ok(())

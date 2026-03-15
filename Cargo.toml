@@ -24,7 +24,7 @@ sysinfo = "0.38.2"
 thiserror = "2.0.18"
 winreg = "0.55"
 image = { version = "0.25", default-features = false, features = ["ico", "png"] }
-tauri = { version = "2.0.0", features = ["tray-icon"] }
+tauri = { version = "2.0.0", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2.0.0"
 md5 = "0.7.0"
 

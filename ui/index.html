@@ -240,7 +240,7 @@
         </div>
         <div class="input-group">
             <label for="game-exec">Executable:</label>
-            <input type="text" id="game-exec" placeholder="E.g., javaw.exe or C:\Games\game.exe">
+            <input type="text" id="game-exec" placeholder="E.g., javaw.exe">
         </div>
         <div id="error-msg" class="error-message"></div>
         <button id="add-btn" class="primary">➕ Add Game</button>
@@ -256,8 +256,6 @@
         const nameInput = document.getElementById('game-name');
         const execInput = document.getElementById('game-exec');
         const errorMsg = document.getElementById('error-msg');
-
-        let refreshInterval;
 
         function formatDuration(totalSecs) {
             const hours = Math.floor(totalSecs / 3600);
@@ -382,11 +380,20 @@
         // Initial load
         loadGames();
         
-        // Setup 1-second refresh interval for "Running" timer just like the native UI did
-        refreshInterval = setInterval(loadGames, 1000);
+        // Setup 1-second refresh interval for "Running" timer
+        let refreshInterval = setInterval(loadGames, 1000);
         
-        // Clean up interval when window is hidden/closed (Tauri handles the window lifecycle natively
-        // but it's good practice)
+        // Pause refresh when window is hidden to save CPU
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearInterval(refreshInterval);
+            } else {
+                loadGames();
+                refreshInterval = setInterval(loadGames, 1000);
+            }
+        });
+        
+        // Clean up interval when window is closed
         window.addEventListener('unload', () => clearInterval(refreshInterval));
     </script>
 </body>
