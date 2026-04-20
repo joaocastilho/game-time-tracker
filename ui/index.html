@@ -90,9 +90,28 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
-            max-height: 300px;
+            max-height: 450px;
             overflow-y: auto;
             padding-right: 5px;
+        }
+
+        .game-item.orphaned-item {
+            opacity: 0.7;
+            border-style: dashed;
+        }
+
+        .game-item.orphaned-item .game-name.orphaned {
+            color: #aaa;
+            font-style: italic;
+        }
+
+        .orphaned-header {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #888;
+            padding: 10px 0 5px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 10px;
         }
 
         /* Scrollbar styles */
@@ -267,60 +286,85 @@
         async function loadGames() {
             try {
                 const data = await invoke('get_ui_data');
-                renderGames(data.games, data.sessions, data.state);
+                const orphaned = await invoke('get_sessions');
+                renderGames(data.games, data.sessions, data.state, orphaned);
             } catch (e) {
                 console.error('Failed to load games:', e);
                 gameListEl.innerHTML = `<div class="empty-state" style="color: var(--danger-color)">Failed to load data: ${e}</div>`;
             }
         }
 
-        function renderGames(games, sessionsMap, state) {
-            if (!games || games.length === 0) {
+        function renderGames(games, sessionsMap, state, orphanedMap) {
+            const orphanedEntries = Object.entries(orphanedMap || {}).sort((a, b) => a[0].localeCompare(b[0]));
+
+            if ((!games || games.length === 0) && orphanedEntries.length === 0) {
                 gameListEl.innerHTML = '<div class="empty-state">No games tracked yet. Add one below!</div>';
                 return;
             }
 
             const now = Math.floor(Date.now() / 1000);
             
-            gameListEl.innerHTML = games.map((game, idx) => {
-                // Calculate total time
-                let totalSecs = 0;
-                
-                // Add historical sessions
-                const gameSessions = sessionsMap[game.id] || [];
-                for (const session of gameSessions) {
-                    totalSecs += session.duration_secs;
-                }
-                
-                // Add active session if running
-                const activeSession = state.active_sessions[game.id];
-                const isRunning = !!activeSession;
-                
-                if (activeSession) {
-                    // Start time is ISO 8601 string, parse to UTC timestamp
-                    const startTime = new Date(activeSession.start).getTime() / 1000;
-                    const elapsed = Math.floor(Math.max(0, now - startTime));
-                    totalSecs += elapsed;
-                }
+            let html = '';
+            
+            if (games && games.length > 0) {
+                html += games.map((game) => {
+                    let totalSecs = 0;
+                    const gameSessions = sessionsMap[game.id] || [];
+                    for (const session of gameSessions) {
+                        totalSecs += session.duration_secs;
+                    }
+                    const activeSession = state.active_sessions[game.id];
+                    const isRunning = !!activeSession;
+                    
+                    if (activeSession) {
+                        const startTime = new Date(activeSession.start).getTime() / 1000;
+                        const elapsed = Math.floor(Math.max(0, now - startTime));
+                        totalSecs += elapsed;
+                    }
 
-                return `
-                    <div class="game-item">
-                        <div class="game-header">
-                            <div class="game-title-area">
-                                <span class="game-name">${escapeHtml(game.name)}</span>
-                                ${isRunning ? '<span class="running-badge">Running</span>' : ''}
+                    return `
+                        <div class="game-item">
+                            <div class="game-header">
+                                <div class="game-title-area">
+                                    <span class="game-name">${escapeHtml(game.name)}</span>
+                                    ${isRunning ? '<span class="running-badge">Running</span>' : ''}
+                                </div>
+                                <button class="danger remove-btn" data-id="${escapeHtml(game.id)}">🗑 Remove</button>
                             </div>
-                            <button class="danger remove-btn" data-id="${escapeHtml(game.id)}">🗑 Remove</button>
+                            <div class="game-details">
+                                <span class="game-stat">ID: ${escapeHtml(game.id)} | Exec: ${escapeHtml(game.executable)}</span>
+                                <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong></span>
+                            </div>
                         </div>
-                        <div class="game-details">
-                            <span class="game-stat">ID: ${escapeHtml(game.id)} | Exec: ${escapeHtml(game.executable)}</span>
-                            <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong></span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+                    `;
+                }).join('');
+            }
 
-            // Attach remove listeners
+            if (orphanedEntries.length > 0) {
+                html += '<div class="orphaned-header">Orphaned (Removed Games)</div>';
+                html += orphanedEntries.map(([gameId, sessions]) => {
+                    let totalSecs = 0;
+                    for (const session of sessions) {
+                        totalSecs += session.duration_secs;
+                    }
+                    return `
+                        <div class="game-item orphaned-item">
+                            <div class="game-header">
+                                <div class="game-title-area">
+                                    <span class="game-name orphaned">${escapeHtml(gameId)}</span>
+                                </div>
+                                <button class="danger delete-orphaned-btn" data-id="${escapeHtml(gameId)}">🗑 Delete</button>
+                            </div>
+                            <div class="game-details">
+                                <span>${sessions.length} session(s), ${formatDuration(totalSecs)} total</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            gameListEl.innerHTML = html;
+
             document.querySelectorAll('.remove-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     const id = e.target.getAttribute('data-id');
@@ -330,6 +374,20 @@
                             loadGames();
                         } catch (err) {
                             errorMsg.textContent = `Failed to remove: ${err}`;
+                        }
+                    }
+                });
+            });
+
+            document.querySelectorAll('.delete-orphaned-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    if (confirm(`Are you sure you want to delete ALL sessions for "${id}"? This cannot be undone.`)) {
+                        try {
+                            await invoke('remove_orphaned_session', { gameId: id });
+                            loadGames();
+                        } catch (err) {
+                            alert(`Failed to delete: ${err}`);
                         }
                     }
                 });

@@ -124,6 +124,44 @@ fn add_game(name: String, executable: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_sessions() -> Result<std::collections::HashMap<String, Vec<Session>>, String> {
+    let dir = config::data_dir();
+    let sessions: std::collections::HashMap<String, Vec<Session>> = store::load(dir.join("sessions.json"))
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let games: Vec<Game> = store::load(dir.join("games.json"))
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let game_ids: std::collections::HashSet<String> = games.iter().map(|g| g.id.clone()).collect();
+
+    let orphaned: std::collections::HashMap<String, Vec<Session>> = sessions
+        .into_iter()
+        .filter(|(id, _)| !game_ids.contains(id))
+        .collect();
+
+    Ok(orphaned)
+}
+
+#[tauri::command]
+fn remove_orphaned_session(game_id: String) -> Result<(), String> {
+    let dir = config::data_dir();
+    let sessions_path = dir.join("sessions.json");
+
+    let mut sessions: std::collections::HashMap<String, Vec<Session>> = store::load(&sessions_path)
+        .map_err(|e| format!("Load error: {}", e))?
+        .unwrap_or_default();
+
+    if sessions.remove(&game_id).is_none() {
+        return Err("No orphaned sessions found for this game".into());
+    }
+
+    store::save(&sessions, &sessions_path).map_err(|e| format!("Save error: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn remove_game(id: String) -> Result<(), String> {
     let dir = config::data_dir();
     let games_path = dir.join("games.json");
@@ -447,7 +485,13 @@ fn main() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_ui_data, add_game, remove_game])
+        .invoke_handler(tauri::generate_handler![
+            get_ui_data,
+            add_game,
+            remove_game,
+            get_sessions,
+            remove_orphaned_session
+        ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // When the user clicks the "X" button, hide the window instead of killing the app
