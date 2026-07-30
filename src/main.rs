@@ -126,10 +126,11 @@ fn add_game(name: String, executable: String) -> Result<(), String> {
 #[tauri::command]
 fn get_sessions() -> Result<std::collections::HashMap<String, Vec<Session>>, String> {
     let dir = config::data_dir();
-    let sessions: std::collections::HashMap<String, Vec<Session>> = store::load(dir.join("sessions.json"))
-        .ok()
-        .flatten()
-        .unwrap_or_default();
+    let sessions: std::collections::HashMap<String, Vec<Session>> =
+        store::load(dir.join("sessions.json"))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
     let games: Vec<Game> = store::load(dir.join("games.json"))
         .ok()
         .flatten()
@@ -165,6 +166,7 @@ fn remove_orphaned_session(game_id: String) -> Result<(), String> {
 fn remove_game(id: String) -> Result<(), String> {
     let dir = config::data_dir();
     let games_path = dir.join("games.json");
+    let sessions_path = dir.join("sessions.json");
     let state_path = dir.join("state.json");
 
     let mut games: Vec<Game> = store::load(&games_path)
@@ -174,6 +176,14 @@ fn remove_game(id: String) -> Result<(), String> {
     games.retain(|g| g.id != id);
 
     store::save(&games, &games_path).map_err(|e| format!("Save error: {}", e))?;
+
+    // Remove sessions for the removed game
+    if let Ok(Some(mut sessions)) =
+        store::load::<std::collections::HashMap<String, Vec<Session>>, _>(&sessions_path)
+    {
+        sessions.remove(&id);
+        let _ = store::save(&sessions, &sessions_path);
+    }
 
     if let Ok(Some(mut state)) = store::load::<models::State, _>(&state_path) {
         if state.active_sessions.remove(&id).is_some() {

@@ -235,6 +235,47 @@
             border-radius: 6px;
             border: 1px dashed var(--border-color);
         }
+
+        .game-header {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .expand-icon {
+            font-size: 12px;
+            color: #888;
+            transition: transform 0.2s;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .expand-icon.expanded {
+            transform: rotate(90deg);
+        }
+
+        .session-list {
+            margin-top: 8px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 8px;
+            display: none;
+        }
+
+        .session-list.visible {
+            display: block;
+        }
+
+        .session-item {
+            font-size: 0.85rem;
+            color: #aaa;
+            padding: 4px 0 4px 16px;
+            display: flex;
+            justify-content: space-between;
+            font-family: monospace;
+        }
+
+        .session-item + .session-item {
+            border-top: 1px solid #333;
+        }
     </style>
 </head>
 <body>
@@ -322,18 +363,35 @@
                         totalSecs += elapsed;
                     }
 
+                    const sessionsHtml = gameSessions.map((s) => {
+                        const startStr = new Date(s.start).toLocaleString();
+                        const endStr = s.end ? new Date(s.end).toLocaleString() : '—';
+                        return `
+                            <div class="session-item">
+                                <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
+                                <span>${formatDuration(s.duration_secs)}</span>
+                            </div>
+                        `;
+                    }).join('');
+
+                    const gameIdAttr = escapeHtml(game.id);
+
                     return `
                         <div class="game-item">
-                            <div class="game-header">
+                            <div class="game-header" data-game-id="${gameIdAttr}">
                                 <div class="game-title-area">
+                                    <span class="expand-icon" data-game-id="${gameIdAttr}">▶</span>
                                     <span class="game-name">${escapeHtml(game.name)}</span>
                                     ${isRunning ? '<span class="running-badge">Running</span>' : ''}
                                 </div>
-                                <button class="danger remove-btn" data-id="${escapeHtml(game.id)}">🗑 Remove</button>
+                                <button class="danger remove-btn" data-id="${gameIdAttr}">🗑 Remove</button>
                             </div>
                             <div class="game-details">
-                                <span class="game-stat">ID: ${escapeHtml(game.id)} | Exec: ${escapeHtml(game.executable)}</span>
-                                <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong></span>
+                                <span class="game-stat">ID: ${gameIdAttr} | Exec: ${escapeHtml(game.executable)}</span>
+                                <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> (${gameSessions.length} session(s))</span>
+                            </div>
+                            <div class="session-list" id="sessions-${gameIdAttr}">
+                                ${sessionsHtml}
                             </div>
                         </div>
                     `;
@@ -342,21 +400,36 @@
 
             if (orphanedEntries.length > 0) {
                 html += '<div class="orphaned-header">Orphaned (Removed Games)</div>';
-                html += orphanedEntries.map(([gameId, sessions]) => {
+                html += orphanedEntries.map(([gameId, gameSessions]) => {
                     let totalSecs = 0;
-                    for (const session of sessions) {
+                    for (const session of gameSessions) {
                         totalSecs += session.duration_secs;
                     }
+                    const sessionId = `orphaned-sessions-${escapeHtml(gameId)}`;
+                    const sessionsHtml = gameSessions.map((s) => {
+                        const startStr = new Date(s.start).toLocaleString();
+                        const endStr = s.end ? new Date(s.end).toLocaleString() : '—';
+                        return `
+                            <div class="session-item">
+                                <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
+                                <span>${formatDuration(s.duration_secs)}</span>
+                            </div>
+                        `;
+                    }).join('');
                     return `
                         <div class="game-item orphaned-item">
-                            <div class="game-header">
+                            <div class="game-header" data-session-id="${sessionId}">
                                 <div class="game-title-area">
+                                    <span class="expand-icon" data-session-id="${sessionId}">▶</span>
                                     <span class="game-name orphaned">${escapeHtml(gameId)}</span>
                                 </div>
                                 <button class="danger delete-orphaned-btn" data-id="${escapeHtml(gameId)}">🗑 Delete</button>
                             </div>
                             <div class="game-details">
-                                <span>${sessions.length} session(s), ${formatDuration(totalSecs)} total</span>
+                                <span>${gameSessions.length} session(s), ${formatDuration(totalSecs)} total</span>
+                            </div>
+                            <div class="session-list" id="${sessionId}">
+                                ${sessionsHtml}
                             </div>
                         </div>
                     `;
@@ -389,6 +462,32 @@
                         } catch (err) {
                             alert(`Failed to delete: ${err}`);
                         }
+                    }
+                });
+            });
+
+            document.querySelectorAll('.game-header[data-game-id]').forEach(header => {
+                header.addEventListener('click', (e) => {
+                    if (e.target.closest('.remove-btn') || e.target.closest('.delete-orphaned-btn')) return;
+                    const gameId = header.getAttribute('data-game-id');
+                    const sessionList = document.getElementById(`sessions-${gameId}`);
+                    const icon = header.querySelector('.expand-icon');
+                    if (sessionList) {
+                        sessionList.classList.toggle('visible');
+                        if (icon) icon.classList.toggle('expanded');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.game-header[data-session-id]').forEach(header => {
+                header.addEventListener('click', (e) => {
+                    if (e.target.closest('.delete-orphaned-btn')) return;
+                    const sessionId = header.getAttribute('data-session-id');
+                    const sessionList = document.getElementById(sessionId);
+                    const icon = header.querySelector('.expand-icon');
+                    if (sessionList) {
+                        sessionList.classList.toggle('visible');
+                        if (icon) icon.classList.toggle('expanded');
                     }
                 });
             });

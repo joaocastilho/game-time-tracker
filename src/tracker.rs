@@ -63,13 +63,29 @@ impl AppTracker {
 
         prune_sessions(&mut all_sessions);
 
-        let end_time = state.last_seen.unwrap_or_else(Utc::now);
+        // If last_seen is None, the tracker crashed before any state was persisted
+        // with timestamps. Using Utc::now() would inflate the duration if the crash
+        // happened hours/days ago. Use the session start time instead (zero duration)
+        // to avoid recording phantom playtime.
+        let end_time = state.last_seen.unwrap_or_else(|| {
+            // The very first session in active_sessions is the one that was
+            // started before the crash — use its start as the end to get zero
+            // duration rather than risking an inflated Utc::now().
+            state
+                .active_sessions
+                .values()
+                .next()
+                .map(|s| s.start)
+                .unwrap_or_else(Utc::now)
+        });
 
         for (game_id, mut session) in state.active_sessions.into_iter() {
             session.end = Some(end_time);
             session.duration_secs = (end_time - session.start).num_seconds().max(0) as u64;
 
-            all_sessions.entry(game_id).or_default().push(session);
+            if session.duration_secs >= 60 {
+                all_sessions.entry(game_id).or_default().push(session);
+            }
         }
 
         store::save(&all_sessions, &sessions_path)?;
@@ -104,6 +120,37 @@ impl AppTracker {
             let mut sessions_changed = false;
             let mut all_sessions: Option<HashMap<String, Vec<Session>>> = None;
 
+            // Detect sleep/resume gaps: if last_seen is more than 10 minutes
+            // behind, close active sessions (the tracker was paused/frozen and
+            // the wall-clock duration would be inflated by the sleep period).
+            if let Some(last_seen) = state.last_seen {
+                let gap_secs = (Utc::now() - last_seen).num_seconds();
+                if gap_secs > 600 && !state.active_sessions.is_empty() {
+                    info!(
+                        "Detected tracking gap of {}s — closing active sessions",
+                        gap_secs
+                    );
+                    if all_sessions.is_none() {
+                        all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
+                    }
+                    let ended: Vec<(String, Session)> = state.active_sessions.drain().collect();
+                    for (game_id, mut session) in ended {
+                        session.end = Some(last_seen);
+                        session.duration_secs =
+                            (last_seen - session.start).num_seconds().max(0) as u64;
+                        if session.duration_secs >= 60 {
+                            if let Some(sessions) = all_sessions.as_mut() {
+                                sessions.entry(game_id).or_default().push(session);
+                            }
+                        }
+                        sessions_changed = true;
+                    }
+                    self.active_count.store(0, Ordering::Relaxed);
+                    state.last_seen = Some(Utc::now());
+                    state_changed = true;
+                }
+            }
+
             for game in &games {
                 let is_running = self.monitor.is_running(&game.executable);
                 let game_id = game.id.as_str();
@@ -136,11 +183,13 @@ impl AppTracker {
                         all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
                     }
 
-                    if let Some(sessions) = all_sessions.as_mut() {
-                        sessions
-                            .entry(game_id.to_owned())
-                            .or_default()
-                            .push(session);
+                    if session.duration_secs >= 60 {
+                        if let Some(sessions) = all_sessions.as_mut() {
+                            sessions
+                                .entry(game_id.to_owned())
+                                .or_default()
+                                .push(session);
+                        }
                     }
 
                     sessions_changed = true;
@@ -175,8 +224,10 @@ impl AppTracker {
                         session.end = Some(end_time);
                         session.duration_secs =
                             (end_time - session.start).num_seconds().max(0) as u64;
-                        if let Some(sessions) = all_sessions.as_mut() {
-                            sessions.entry(zombie_id).or_default().push(session);
+                        if session.duration_secs >= 60 {
+                            if let Some(sessions) = all_sessions.as_mut() {
+                                sessions.entry(zombie_id).or_default().push(session);
+                            }
                         }
                         sessions_changed = true;
                         state_changed = true;
