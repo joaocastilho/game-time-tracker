@@ -308,6 +308,10 @@
 
     <script type="module">
         const { invoke } = window.__TAURI__.core;
+
+        // Track which games have their session list expanded (survives refreshes)
+        const expandedGames = new Set();
+        const expandedOrphaned = new Set();
         
         // DOM Elements
         const gameListEl = document.getElementById('game-list');
@@ -436,7 +440,33 @@
                 }).join('');
             }
             
+            // Re-apply expanded state before innerHTML replacement
+            expandedGames.clear();
+            expandedOrphaned.clear();
+            document.querySelectorAll('.session-list.visible').forEach(el => {
+                const id = el.id;
+                if (id.startsWith('sessions-')) {
+                    expandedGames.add(id.slice('sessions-'.length));
+                } else if (id.startsWith('orphaned-sessions-')) {
+                    expandedOrphaned.add(id.slice('orphaned-sessions-'.length));
+                }
+            });
+
             gameListEl.innerHTML = html;
+
+            // Restore expanded state
+            expandedGames.forEach(gameId => {
+                const list = document.getElementById(`sessions-${gameId}`);
+                const icon = document.querySelector(`.expand-icon[data-game-id="${gameId}"]`);
+                if (list) list.classList.add('visible');
+                if (icon) icon.classList.add('expanded');
+            });
+            expandedOrphaned.forEach(sessionId => {
+                const list = document.getElementById(sessionId);
+                const icon = document.querySelector(`.expand-icon[data-session-id="${sessionId}"]`);
+                if (list) list.classList.add('visible');
+                if (icon) icon.classList.add('expanded');
+            });
 
             document.querySelectorAll('.remove-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
@@ -473,8 +503,13 @@
                     const sessionList = document.getElementById(`sessions-${gameId}`);
                     const icon = header.querySelector('.expand-icon');
                     if (sessionList) {
-                        sessionList.classList.toggle('visible');
+                        const wasVisible = sessionList.classList.toggle('visible');
                         if (icon) icon.classList.toggle('expanded');
+                        if (wasVisible) {
+                            expandedGames.add(gameId);
+                        } else {
+                            expandedGames.delete(gameId);
+                        }
                     }
                 });
             });
@@ -486,8 +521,13 @@
                     const sessionList = document.getElementById(sessionId);
                     const icon = header.querySelector('.expand-icon');
                     if (sessionList) {
-                        sessionList.classList.toggle('visible');
+                        const wasVisible = sessionList.classList.toggle('visible');
                         if (icon) icon.classList.toggle('expanded');
+                        if (wasVisible) {
+                            expandedOrphaned.add(sessionId);
+                        } else {
+                            expandedOrphaned.delete(sessionId);
+                        }
                     }
                 });
             });
