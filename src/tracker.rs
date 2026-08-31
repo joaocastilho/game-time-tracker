@@ -3,8 +3,9 @@ use crate::models::{Game, Session, State};
 use crate::process::ProcessMonitor;
 use crate::store::{self, StoreError};
 use chrono::Utc;
-use log::{error, info};
+use log::{error, info, warn};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -22,11 +23,28 @@ fn prune_sessions(sessions: &mut HashMap<String, Vec<Session>>) {
     const MAX_SESSIONS_PER_GAME: usize = 100;
     for game_sessions in sessions.values_mut() {
         if game_sessions.len() > MAX_SESSIONS_PER_GAME {
-            game_sessions.sort_by_key(|s| s.start);
-            game_sessions.reverse();
+            game_sessions.sort_by_key(|s| std::cmp::Reverse(s.start));
             game_sessions.truncate(MAX_SESSIONS_PER_GAME);
         }
     }
+}
+
+fn load_or_default<T>(path: &Path) -> T
+where
+    T: serde::de::DeserializeOwned + Default,
+{
+    match store::load(path) {
+        Ok(Some(v)) => v,
+        Ok(None) => T::default(),
+        Err(e) => {
+            warn!("Failed to load {}: {} — using default", path.display(), e);
+            T::default()
+        }
+    }
+}
+
+fn load_sessions_or_default(path: &Path) -> HashMap<String, Vec<Session>> {
+    load_or_default(path)
 }
 
 impl AppTracker {
@@ -47,7 +65,7 @@ impl AppTracker {
         let state_path = data_dir().join("state.json");
         let sessions_path = data_dir().join("sessions.json");
 
-        let state: State = store::load(&state_path)?.unwrap_or_default();
+        let state: State = load_or_default(&state_path);
 
         if state.active_sessions.is_empty() {
             return Ok(());
@@ -59,35 +77,22 @@ impl AppTracker {
         );
 
         let mut all_sessions: HashMap<String, Vec<Session>> =
-            store::load(&sessions_path)?.unwrap_or_default();
-
-        prune_sessions(&mut all_sessions);
+            load_sessions_or_default(&sessions_path);
 
         // If last_seen is None, the tracker crashed before any state was persisted
-        // with timestamps. Using Utc::now() would inflate the duration if the crash
-        // happened hours/days ago. Use the session start time instead (zero duration)
-        // to avoid recording phantom playtime.
-        let end_time = state.last_seen.unwrap_or_else(|| {
-            // The very first session in active_sessions is the one that was
-            // started before the crash — use its start as the end to get zero
-            // duration rather than risking an inflated Utc::now().
-            state
-                .active_sessions
-                .values()
-                .next()
-                .map(|s| s.start)
-                .unwrap_or_else(Utc::now)
-        });
-
+        // with timestamps. Use each session's own start as end (zero duration) to
+        // avoid inflating a random session's duration due to HashMap iteration order.
         for (game_id, mut session) in state.active_sessions.into_iter() {
-            session.end = Some(end_time);
-            session.duration_secs = (end_time - session.start).num_seconds().max(0) as u64;
+            let sess_end = state.last_seen.unwrap_or(session.start);
+            session.end = Some(sess_end);
+            session.duration_secs = (sess_end - session.start).num_seconds().max(0) as u64;
 
             if session.duration_secs >= 60 {
                 all_sessions.entry(game_id).or_default().push(session);
             }
         }
 
+        prune_sessions(&mut all_sessions);
         store::save(&all_sessions, &sessions_path)?;
 
         let new_state = State::default();
@@ -106,7 +111,7 @@ impl AppTracker {
         let state_path = data_dir.join("state.json");
         let sessions_path = data_dir.join("sessions.json");
 
-        let mut state: State = store::load(&state_path)?.unwrap_or_default();
+        let mut state: State = load_or_default(&state_path);
 
         loop {
             if self.should_stop.load(Ordering::SeqCst) {
@@ -114,7 +119,17 @@ impl AppTracker {
                 break Ok(());
             }
 
-            let games: Vec<Game> = store::load(&games_path)?.unwrap_or_default();
+            let (games, games_load_ok): (Vec<Game>, bool) = match store::load(&games_path) {
+                Ok(Some(v)) => (v, true),
+                Ok(None) => (Vec::new(), true),
+                Err(e) => {
+                    warn!(
+                        "Failed to load games.json: {} — deferring zombie handling to avoid data loss",
+                        e
+                    );
+                    (Vec::new(), false)
+                }
+            };
 
             let mut state_changed = false;
             let mut sessions_changed = false;
@@ -123,15 +138,16 @@ impl AppTracker {
             // Detect sleep/resume gaps: if last_seen is more than 10 minutes
             // behind, close active sessions (the tracker was paused/frozen and
             // the wall-clock duration would be inflated by the sleep period).
+            const GAP_THRESHOLD_SECS: i64 = 600;
             if let Some(last_seen) = state.last_seen {
                 let gap_secs = (Utc::now() - last_seen).num_seconds();
-                if gap_secs > 600 && !state.active_sessions.is_empty() {
+                if gap_secs > GAP_THRESHOLD_SECS && !state.active_sessions.is_empty() {
                     info!(
                         "Detected tracking gap of {}s — closing active sessions",
                         gap_secs
                     );
                     if all_sessions.is_none() {
-                        all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
+                        all_sessions = Some(load_sessions_or_default(&sessions_path));
                     }
                     let ended: Vec<(String, Session)> = state.active_sessions.drain().collect();
                     for (game_id, mut session) in ended {
@@ -141,18 +157,19 @@ impl AppTracker {
                         if session.duration_secs >= 60 {
                             if let Some(sessions) = all_sessions.as_mut() {
                                 sessions.entry(game_id).or_default().push(session);
+                                sessions_changed = true;
                             }
                         }
-                        sessions_changed = true;
                     }
-                    self.active_count.store(0, Ordering::Relaxed);
+                    self.active_count.store(0, Ordering::SeqCst);
                     state.last_seen = Some(Utc::now());
                     state_changed = true;
                 }
             }
 
+            self.monitor.refresh();
             for game in &games {
-                let is_running = self.monitor.is_running(&game.executable);
+                let is_running = self.monitor.is_running_cached(&game.executable);
                 let game_id = game.id.as_str();
 
                 let is_active = state.active_sessions.contains_key(game_id);
@@ -169,7 +186,7 @@ impl AppTracker {
                     );
                     state_changed = true;
                     self.active_count
-                        .store(state.active_sessions.len(), Ordering::Relaxed);
+                        .store(state.active_sessions.len(), Ordering::SeqCst);
                 } else if !is_running && is_active {
                     info!("Ended session for game: {}", game.name);
                     let Some(mut session) = state.active_sessions.remove(game_id) else {
@@ -180,7 +197,7 @@ impl AppTracker {
                     session.duration_secs = (end_time - session.start).num_seconds().max(0) as u64;
 
                     if all_sessions.is_none() {
-                        all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
+                        all_sessions = Some(load_sessions_or_default(&sessions_path));
                     }
 
                     if session.duration_secs >= 60 {
@@ -189,19 +206,21 @@ impl AppTracker {
                                 .entry(game_id.to_owned())
                                 .or_default()
                                 .push(session);
+                            sessions_changed = true;
                         }
                     }
 
-                    sessions_changed = true;
                     state_changed = true;
                     self.active_count
-                        .store(state.active_sessions.len(), Ordering::Relaxed);
+                        .store(state.active_sessions.len(), Ordering::SeqCst);
                 }
             }
 
             // End any active sessions whose game has been removed from games.json.
             // Without this, removing a tracked game while it's running leaves its
             // active_session open indefinitely, inflating its duration at recovery.
+            // If games.json failed to load (corrupted), defer zombie handling to
+            // avoid wiping all active_sessions as zombies (data loss).
             let current_ids: std::collections::HashSet<&str> =
                 games.iter().map(|g| g.id.as_str()).collect();
             let zombie_ids: Vec<String> = state
@@ -210,13 +229,16 @@ impl AppTracker {
                 .filter(|id| !current_ids.contains(id.as_str()))
                 .cloned()
                 .collect();
-            if !zombie_ids.is_empty() {
+            if !games_load_ok && !state.active_sessions.is_empty() {
+                warn!("Skipping zombie check due to games.json load failure — preserving {} active session(s)", state.active_sessions.len());
+            }
+            if games_load_ok && !zombie_ids.is_empty() {
                 info!(
                     "Ending {} zombie session(s) for removed game(s)",
                     zombie_ids.len()
                 );
                 if all_sessions.is_none() {
-                    all_sessions = Some(store::load(&sessions_path)?.unwrap_or_default());
+                    all_sessions = Some(load_sessions_or_default(&sessions_path));
                 }
                 for zombie_id in zombie_ids {
                     if let Some(mut session) = state.active_sessions.remove(&zombie_id) {
@@ -227,14 +249,14 @@ impl AppTracker {
                         if session.duration_secs >= 60 {
                             if let Some(sessions) = all_sessions.as_mut() {
                                 sessions.entry(zombie_id).or_default().push(session);
+                                sessions_changed = true;
                             }
                         }
-                        sessions_changed = true;
                         state_changed = true;
                     }
                 }
                 self.active_count
-                    .store(state.active_sessions.len(), Ordering::Relaxed);
+                    .store(state.active_sessions.len(), Ordering::SeqCst);
             }
 
             if !state.active_sessions.is_empty() {

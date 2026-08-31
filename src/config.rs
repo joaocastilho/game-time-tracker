@@ -26,13 +26,25 @@ fn get_config_dir() -> PathBuf {
         }
     }
 
-    warn!("Could not determine user config directory, falling back to current directory");
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    warn!("Could not determine user config directory, falling back to temp directory");
+    let mut fallback = std::env::temp_dir();
+    fallback.push("game-time-tracker");
+    fallback
 }
 
 pub fn data_dir() -> PathBuf {
     let mut path = get_config_dir();
     path.push("game-time-tracker");
+
+    if path.exists() && !path.is_dir() {
+        warn!(
+            "Data path exists as file at {} — falling back to temp",
+            path.display()
+        );
+        let mut fallback = std::env::temp_dir();
+        fallback.push("game-time-tracker");
+        path = fallback;
+    }
 
     if let Err(e) = std::fs::create_dir_all(&path) {
         warn!(

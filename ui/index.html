@@ -14,6 +14,11 @@
             --danger-color: #f44336;
             --danger-hover: #d32f2f;
             --border-color: #404040;
+            --accent-color: #61afef;
+        }
+
+        html {
+            height: 100%;
         }
 
         body {
@@ -21,10 +26,26 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 20px;
+            padding: 28px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 32px;
+            height: 100vh;
+            max-height: 100vh;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        .main-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .main-section h2 {
+            flex-shrink: 0;
         }
 
         h1, h2 {
@@ -86,13 +107,27 @@
             color: white;
         }
 
+        button.small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        button.icon-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            line-height: 1;
+        }
+
         .game-list {
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            max-height: 450px;
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+            max-height: none;
             overflow-y: auto;
-            padding-right: 5px;
+            padding-right: 6px;
+            padding-bottom: 12px;
         }
 
         .game-item.orphaned-item {
@@ -114,7 +149,6 @@
             margin-bottom: 10px;
         }
 
-        /* Scrollbar styles */
         ::-webkit-scrollbar {
             width: 8px;
         }
@@ -131,11 +165,11 @@
 
         .game-item {
             background-color: var(--surface-color);
-            border-radius: 6px;
-            padding: 12px;
+            border-radius: 8px;
+            padding: 16px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 10px;
             border: 1px solid var(--border-color);
         }
 
@@ -143,12 +177,20 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: pointer;
+            user-select: none;
         }
         
         .game-title-area {
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+
+        .game-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
         }
 
         .game-name {
@@ -187,26 +229,42 @@
 
         .add-game-section {
             background-color: var(--surface-color);
-            padding: 15px;
-            border-radius: 6px;
+            padding: 18px;
+            border-radius: 8px;
             border: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 16px;
+            flex-shrink: 0;
+            max-height: 40vh;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+
+        .add-game-section.hidden {
+            display: none;
+        }
+
+        .add-game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .input-group {
             display: flex;
             align-items: center;
             gap: 10px;
+            position: relative;
         }
 
         .input-group label {
             width: 80px;
             font-size: 0.95rem;
+            flex-shrink: 0;
         }
 
-        input[type="text"] {
+        input[type="text"], input[type="datetime-local"], input[type="number"] {
             flex-grow: 1;
             background-color: var(--bg-color);
             border: 1px solid var(--border-color);
@@ -214,11 +272,81 @@
             padding: 8px 12px;
             border-radius: 4px;
             font-size: 14px;
+            min-width: 0;
         }
 
-        input[type="text"]:focus {
+        input[type="text"]:focus, input[type="datetime-local"]:focus, input[type="number"]:focus {
             outline: none;
             border-color: var(--primary-color);
+        }
+
+        .autocomplete-container {
+            position: relative;
+            flex-grow: 1;
+            display: flex;
+            gap: 0;
+        }
+
+        .autocomplete-container input {
+            flex-grow: 1;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-right: none;
+        }
+
+        .dropdown-btn {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+            padding: 8px 10px;
+            min-width: 36px;
+            background-color: var(--bg-color);
+        }
+
+        .refresh-btn {
+            padding: 8px 10px;
+            min-width: 36px;
+            background-color: var(--bg-color);
+            margin-left: 6px;
+        }
+
+        .autocomplete-list {
+            position: absolute;
+            left: 90px;
+            right: 0;
+            top: 100%;
+            z-index: 100;
+            background-color: #252525;
+            border: 1px solid var(--border-color);
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 220px;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .autocomplete-list.visible {
+            display: block;
+        }
+
+        .autocomplete-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: monospace;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .autocomplete-item:hover, .autocomplete-item.active {
+            background-color: #3a3a3a;
+        }
+
+        .autocomplete-item small {
+            color: #888;
+            font-size: 11px;
         }
 
         .error-message {
@@ -236,11 +364,6 @@
             border: 1px dashed var(--border-color);
         }
 
-        .game-header {
-            cursor: pointer;
-            user-select: none;
-        }
-
         .expand-icon {
             font-size: 12px;
             color: #888;
@@ -254,27 +377,133 @@
         }
 
         .session-list {
-            margin-top: 8px;
+            margin-top: 14px;
             border-top: 1px solid var(--border-color);
-            padding-top: 8px;
+            padding-top: 12px;
             display: none;
+            min-height: 0;
         }
 
         .session-list.visible {
-            display: block;
+            display: flex;
+            flex-direction: column;
+            max-height: 45vh;
+            overflow-y: auto;
+            padding-right: 4px;
+            gap: 8px;
         }
 
         .session-item {
             font-size: 0.85rem;
             color: #aaa;
-            padding: 4px 0 4px 16px;
+            padding: 6px 0 6px 16px;
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-family: monospace;
+            gap: 8px;
         }
 
         .session-item + .session-item {
             border-top: 1px solid #333;
+        }
+
+        .session-main {
+            flex-grow: 1;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .session-actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .session-edit-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+            padding: 8px;
+            background-color: #1e1e1e;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            margin: 4px 0 4px 16px;
+        }
+
+        .session-edit-form input[type="datetime-local"] {
+            flex: 1 1 160px;
+            font-size: 13px;
+            padding: 6px 8px;
+        }
+
+        .session-edit-form .form-actions {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .session-edit-form label {
+            font-size: 12px;
+            color: #888;
+            width: 40px;
+        }
+
+        .game-edit-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px;
+            background-color: #1e1e1e;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            margin-top: 8px;
+        }
+
+        .game-edit-form .input-group {
+            margin: 0;
+        }
+
+        .game-edit-form .autocomplete-list {
+            left: 90px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .add-session-section {
+            margin-top: 16px;
+            padding-top: 14px;
+            border-top: 1px dashed #333;
+            flex-shrink: 0;
+            max-height: 32vh;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #888;
+            font-style: italic;
+        }
+
+        .badge-exe {
+            font-family: monospace;
+            background-color: #333;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .add-game-toggle-bar {
+            display: flex;
+            justify-content: flex-end;
         }
     </style>
 </head>
@@ -284,48 +513,164 @@
         <button id="refresh-btn">↻ Refresh</button>
     </div>
 
-    <div>
-        <h2>Tracked Games</h2>
+    <div class="main-section">
+        <div style="display:flex; align-items:center; margin-bottom:28px; flex-shrink:0; padding-bottom:12px; gap:16px; border-bottom:1px solid var(--border-color)">
+            <h2>Tracked Games</h2>
+        </div>
         <div id="game-list" class="game-list">
-            <!-- Games injected here -->
             <div class="empty-state">Loading games...</div>
+        </div>
+        <div style="margin-top:28px; display:flex; justify-content:center; flex-shrink:0; padding-top:16px; border-top:1px solid var(--border-color)">
+            <button id="toggle-add-game-btn" class="primary" style="padding:12px 24px; font-size:15px; min-width:160px">➕ Add Game</button>
         </div>
     </div>
 
-    <div class="add-game-section">
-        <h2>Add Game</h2>
+    <div id="add-game-section" class="add-game-section hidden">
+        <div class="add-game-header">
+            <h2>Add Game</h2>
+            <button id="close-add-game-btn" class="small" title="Close">✕ Close</button>
+        </div>
         <div class="input-group">
             <label for="game-name">Name:</label>
             <input type="text" id="game-name" placeholder="E.g., Minecraft">
         </div>
-        <div class="input-group">
+        <div class="input-group" style="position: relative;">
             <label for="game-exec">Executable:</label>
-            <input type="text" id="game-exec" placeholder="E.g., javaw.exe">
+            <div class="autocomplete-container">
+                <input type="text" id="game-exec" placeholder="E.g., javaw.exe" autocomplete="off">
+                <button id="exec-dropdown-btn" type="button" class="dropdown-btn" title="Show running applications (ordered by last started)">▼</button>
+            </div>
+            <button id="refresh-exe-btn" type="button" class="refresh-btn" title="Refresh list">↻</button>
+            <div id="exec-autocomplete-list" class="autocomplete-list"></div>
         </div>
+        <div class="hint">Dropdown shows non-system applications only, ordered by last started — type to filter, click ▼ to see all, ↻ to refresh.</div>
         <div id="error-msg" class="error-message"></div>
-        <button id="add-btn" class="primary">➕ Add Game</button>
+        <div class="form-row">
+            <button id="add-btn" class="primary">➕ Add Game</button>
+            <button id="cancel-add-game-btn" class="small">Cancel</button>
+        </div>
     </div>
 
     <script type="module">
-        const { invoke } = window.__TAURI__.core;
+        const invoke = window.__TAURI__?.core?.invoke ?? (async () => { throw new Error('Tauri API not available (running outside Tauri)'); });
 
-        // Track which games have their session list expanded (survives refreshes)
         const expandedGames = new Set();
         const expandedOrphaned = new Set();
+        let runningProcesses = [];
+        let editingGameId = null;
+        let editingSessionKey = null;
         
-        // DOM Elements
         const gameListEl = document.getElementById('game-list');
         const refreshBtn = document.getElementById('refresh-btn');
         const addBtn = document.getElementById('add-btn');
         const nameInput = document.getElementById('game-name');
         const execInput = document.getElementById('game-exec');
+        const execDropdownBtn = document.getElementById('exec-dropdown-btn');
+        const execAutocompleteList = document.getElementById('exec-autocomplete-list');
+        const refreshExeBtn = document.getElementById('refresh-exe-btn');
         const errorMsg = document.getElementById('error-msg');
+        const addGameSection = document.getElementById('add-game-section');
+        const toggleAddGameBtn = document.getElementById('toggle-add-game-btn');
+        const closeAddGameBtn = document.getElementById('close-add-game-btn');
+        const cancelAddGameBtn = document.getElementById('cancel-add-game-btn');
+
+        // Remember last window size (Tauri LogicalSize) via localStorage + Tauri window API
+        (async () => {
+            try {
+                const saved = localStorage.getItem('gtt-window-size');
+                if (saved && window.__TAURI__?.window) {
+                    const { width, height } = JSON.parse(saved);
+                    if (width && height) {
+                        const win = window.__TAURI__.window.getCurrentWindow();
+                        try {
+                            const LogicalSize = window.__TAURI__.window.LogicalSize || window.__TAURI__.dpi?.LogicalSize;
+                            if (LogicalSize) {
+                                await win.setSize(new LogicalSize(width, height));
+                            } else {
+                                await win.setSize({ width, height });
+                            }
+                        } catch {
+                            try { await win.setSize({ width, height }); } catch {}
+                        }
+                    }
+                }
+            } catch {}
+            try {
+                if (window.__TAURI__?.window) {
+                    const win = window.__TAURI__.window.getCurrentWindow();
+                    let t;
+                    win.onResized(({ payload }) => {
+                        clearTimeout(t);
+                        t = setTimeout(async () => {
+                            try {
+                                const factor = await win.scaleFactor();
+                                const logicalWidth = Math.round(payload.width / factor);
+                                const logicalHeight = Math.round(payload.height / factor);
+                                localStorage.setItem('gtt-window-size', JSON.stringify({ width: logicalWidth, height: logicalHeight }));
+                            } catch {}
+                        }, 400);
+                    });
+                } else {
+                    let t2;
+                    window.addEventListener('resize', () => {
+                        clearTimeout(t2);
+                        t2 = setTimeout(() => {
+                            localStorage.setItem('gtt-window-size', JSON.stringify({ width: window.innerWidth, height: window.innerHeight }));
+                        }, 400);
+                    });
+                }
+            } catch {}
+        })();
 
         function formatDuration(totalSecs) {
             const hours = Math.floor(totalSecs / 3600);
             const minutes = Math.floor((totalSecs % 3600) / 60);
             const seconds = totalSecs % 60;
             return `${hours}h ${minutes}m ${seconds}s`;
+        }
+
+        function toLocalDatetimeValue(isoString) {
+            if (!isoString) return '';
+            const d = new Date(isoString);
+            if (isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        function fromLocalDatetimeValue(localVal) {
+            if (!localVal) return null;
+            const d = new Date(localVal);
+            if (isNaN(d.getTime())) return null;
+            return d.toISOString();
+        }
+
+        function recalcAddSessionStart(gameId) {
+            const form = document.getElementById(`add-session-${gameId}`);
+            if (!form) return;
+            const h = parseInt(form.querySelector('.add-hours')?.value || '0', 10) || 0;
+            const m = parseInt(form.querySelector('.add-minutes')?.value || '0', 10) || 0;
+            if (h === 0 && m === 0) return;
+            const endVal = form.querySelector('.add-end')?.value;
+            let endDate = endVal ? new Date(endVal) : new Date();
+            if (isNaN(endDate.getTime())) endDate = new Date();
+            const startDate = new Date(endDate.getTime() - (h * 3600 + m * 60) * 1000);
+            const startInput = form.querySelector('.add-start');
+            if (startInput) startInput.value = toLocalDatetimeValue(startDate.toISOString());
+        }
+
+        function openAddGame() {
+            addGameSection.classList.remove('hidden');
+            toggleAddGameBtn.style.display = 'none';
+            nameInput.focus();
+            // Refresh list when opening so dropdown is fresh
+            loadRunningProcesses();
+        }
+
+        function closeAddGame() {
+            addGameSection.classList.add('hidden');
+            toggleAddGameBtn.style.display = '';
+            errorMsg.textContent = '';
+            hideAutocomplete(execAutocompleteList);
         }
 
         async function loadGames() {
@@ -335,15 +680,114 @@
                 renderGames(data.games, data.sessions, data.state, orphaned);
             } catch (e) {
                 console.error('Failed to load games:', e);
-                gameListEl.innerHTML = `<div class="empty-state" style="color: var(--danger-color)">Failed to load data: ${e}</div>`;
+                gameListEl.innerHTML = `<div class="empty-state" style="color: var(--danger-color)">Failed to load data: ${escapeHtml(String(e))}</div>`;
+            }
+        }
+
+        async function loadRunningProcesses() {
+            try {
+                const list = await invoke('get_running_processes');
+                runningProcesses = Array.isArray(list) ? list : [];
+                updateAllAutocompletes();
+            } catch (e) {
+                console.error('Failed to load running processes', e);
+            }
+        }
+
+        function updateAllAutocompletes() {
+            if (execAutocompleteList.classList.contains('visible')) {
+                showAutocomplete(execInput, execAutocompleteList);
+            }
+            document.querySelectorAll('.game-edit-form .edit-exec').forEach(inp => {
+                const list = inp.closest('.input-group').querySelector('.autocomplete-list');
+                if (list && list.classList.contains('visible')) {
+                    showAutocomplete(inp, list);
+                }
+            });
+        }
+
+        function showAutocomplete(inputEl, listEl) {
+            const query = (inputEl.value || '').toLowerCase();
+            // Preserve original order (already ordered by last started, most recent first)
+            let candidates = runningProcesses;
+            // Build index map for stable ordering by last started
+            const orderMap = new Map();
+            runningProcesses.forEach((name, idx) => {
+                const lower = name.toLowerCase();
+                if (!orderMap.has(lower)) orderMap.set(lower, idx);
+            });
+            if (query) {
+                candidates = candidates.filter(p => p.toLowerCase().includes(query));
+                candidates.sort((a,b) => {
+                    const al = a.toLowerCase(), bl = b.toLowerCase();
+                    const aStarts = al.startsWith(query) ? 0 : 1;
+                    const bStarts = bl.startsWith(query) ? 0 : 1;
+                    if (aStarts !== bStarts) return aStarts - bStarts;
+                    // Secondary: last started order (lower index = more recent)
+                    const aIdx = orderMap.get(al) ?? 9999;
+                    const bIdx = orderMap.get(bl) ?? 9999;
+                    return aIdx - bIdx;
+                });
+            }
+            const limited = candidates.slice(0, 80);
+            if (limited.length === 0) {
+                listEl.innerHTML = '<div class="autocomplete-item" style="color:#888; cursor:default">No matches — dropdown shows non-system applications only</div>';
+            } else {
+                listEl.innerHTML = limited.map(p => `<div class="autocomplete-item" data-value="${escapeHtml(p)}"><span>${escapeHtml(p)}</span><small>running</small></div>`).join('');
+                listEl.querySelectorAll('.autocomplete-item[data-value]').forEach(item => {
+                    item.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        inputEl.value = item.getAttribute('data-value');
+                        hideAutocomplete(listEl);
+                        inputEl.focus();
+                    });
+                });
+            }
+            listEl.classList.add('visible');
+        }
+
+        function hideAutocomplete(listEl) {
+            if (listEl) listEl.classList.remove('visible');
+        }
+
+        function setupAutocomplete(inputEl, listEl, dropdownBtn) {
+            if (inputEl.dataset.autocompleteBound) return;
+            inputEl.dataset.autocompleteBound = '1';
+            inputEl.addEventListener('focus', () => showAutocomplete(inputEl, listEl));
+            inputEl.addEventListener('input', () => showAutocomplete(inputEl, listEl));
+            inputEl.addEventListener('blur', () => setTimeout(() => hideAutocomplete(listEl), 150));
+            if (dropdownBtn) {
+                if (!dropdownBtn.dataset.bound) {
+                    dropdownBtn.dataset.bound = '1';
+                    dropdownBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        if (listEl.classList.contains('visible')) {
+                            hideAutocomplete(listEl);
+                        } else {
+                            inputEl.focus();
+                            showAutocomplete(inputEl, listEl);
+                        }
+                    });
+                    dropdownBtn.addEventListener('mousedown', (e) => e.preventDefault());
+                }
             }
         }
 
         function renderGames(games, sessionsMap, state, orphanedMap) {
             const orphanedEntries = Object.entries(orphanedMap || {}).sort((a, b) => a[0].localeCompare(b[0]));
 
+            const prevExpandedGames = new Set();
+            const prevExpandedOrphaned = new Set();
+            document.querySelectorAll('.session-list.visible').forEach(el => {
+                const id = el.id;
+                if (id.startsWith('sessions-')) prevExpandedGames.add(id.slice(9));
+                else if (id.startsWith('orphaned-sessions-')) prevExpandedOrphaned.add(id.slice(18));
+            });
+            prevExpandedGames.forEach(v => expandedGames.add(v));
+            prevExpandedOrphaned.forEach(v => expandedOrphaned.add(v));
+
             if ((!games || games.length === 0) && orphanedEntries.length === 0) {
-                gameListEl.innerHTML = '<div class="empty-state">No games tracked yet. Add one below!</div>';
+                gameListEl.innerHTML = '<div class="empty-state">No games tracked yet. Click “Add Game” to start.</div>';
                 return;
             }
 
@@ -367,18 +811,117 @@
                         totalSecs += elapsed;
                     }
 
-                    const sessionsHtml = gameSessions.map((s) => {
+                    const isEditingThis = editingGameId === game.id;
+
+                    const sessionsHtml = gameSessions.map((s, idx) => {
                         const startStr = new Date(s.start).toLocaleString();
-                        const endStr = s.end ? new Date(s.end).toLocaleString() : '—';
+                        const endStr = s.end ? new Date(s.end).toLocaleString() : '— (ongoing)';
+                        const key = `${game.id}-${idx}`;
+                        const isEditingThisSession = editingSessionKey === key;
+                        if (isEditingThisSession) {
+                            return `
+                                <div class="session-edit-form" data-game-id="${escapeHtml(game.id)}" data-index="${idx}">
+                                    <label>Start:</label><input type="datetime-local" step="1" class="edit-start" value="${escapeHtml(toLocalDatetimeValue(s.start))}">
+                                    <label>End:</label><input type="datetime-local" step="1" class="edit-end" value="${escapeHtml(toLocalDatetimeValue(s.end))}">
+                                    <div class="form-actions">
+                                        <button class="primary small save-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}">Save</button>
+                                        <button class="small cancel-session-btn" data-key="${escapeHtml(key)}">Cancel</button>
+                                    </div>
+                                </div>
+                            `;
+                        }
                         return `
-                            <div class="session-item">
-                                <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
-                                <span>${formatDuration(s.duration_secs)}</span>
+                            <div class="session-item" data-game-id="${escapeHtml(game.id)}" data-index="${idx}">
+                                <div class="session-main">
+                                    <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
+                                    <span>${formatDuration(s.duration_secs)}</span>
+                                </div>
+                                <div class="session-actions">
+                                    <button class="small icon-btn edit-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" title="Edit session">✎</button>
+                                    <button class="small danger icon-btn delete-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" title="Delete session">🗑</button>
+                                </div>
                             </div>
                         `;
                     }).join('');
 
+                    const addSessionForm = `
+                        <div class="add-session-section" id="add-session-${escapeHtml(game.id)}" style="display:none">
+                            <div class="session-edit-form" style="margin:0; flex-direction:column; align-items:stretch">
+                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                                    <label style="width:auto">Duration:</label>
+                                    <input type="number" class="add-hours" placeholder="Hours" min="0" style="width:70px; flex:0 0 70px">
+                                    <span>h</span>
+                                    <input type="number" class="add-minutes" placeholder="Mins" min="0" max="59" style="width:70px; flex:0 0 70px">
+                                    <span>m</span>
+                                    <span class="hint" style="margin-left:8px">→ auto-fills start from end</span>
+                                </div>
+                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; width:100%">
+                                    <label>Start:</label><input type="datetime-local" step="1" class="add-start" style="flex:1 1 200px">
+                                    <label>End:</label><input type="datetime-local" step="1" class="add-end" style="flex:1 1 200px">
+                                </div>
+                                <div class="hint">End defaults to now; edit start/end directly if needed. Changing hours/mins recalculates start from end.</div>
+                                <div class="form-actions">
+                                    <button class="primary small confirm-add-session-btn" data-game-id="${escapeHtml(game.id)}">Add</button>
+                                    <button class="small cancel-add-session-btn" data-game-id="${escapeHtml(game.id)}">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    const sessionsToggleBtn = `<button class="small sessions-toggle-btn" data-game-id="${escapeHtml(game.id)}" style="margin-top:16px; padding:6px 12px; width:100%; justify-content:center; display:flex; gap:6px"><span>Show Sessions (${gameSessions.length})</span><span class="expand-icon" style="margin:0">▼</span></button>`;
+                    const addSessionBtn = `<button class="small add-session-toggle-btn" data-game-id="${escapeHtml(game.id)}" style="margin-top:14px; padding:6px 12px">+ Add Session</button>`;
+
+                    const sessionsBlock = `
+                        ${sessionsToggleBtn}
+                        <div class="session-list" id="sessions-${escapeHtml(game.id)}" style="display:none">
+                            ${gameSessions.length ? sessionsHtml : '<div class="hint" style="padding:12px 0 4px 16px">No sessions yet — add one below</div>'}
+                            <div style="margin-top:12px">${addSessionBtn}</div>
+                            ${addSessionForm}
+                        </div>
+                    `;
+
                     const gameIdAttr = escapeHtml(game.id);
+
+                    if (isEditingThis) {
+                        const avgSecs = gameSessions.length ? Math.round(totalSecs / gameSessions.length) : 0;
+                        let lastPlayedStr = 'never';
+                        if (gameSessions.length) {
+                            const last = gameSessions.reduce((a,b) => new Date(a.end || a.start) > new Date(b.end || b.start) ? a : b);
+                            lastPlayedStr = new Date(last.end || last.start).toLocaleString();
+                        } else if (isRunning) {
+                            lastPlayedStr = 'now (running)';
+                        }
+                        return `
+                            <div class="game-item">
+                                <div class="game-edit-form" data-game-id="${gameIdAttr}">
+                                    <div class="input-group">
+                                        <label>Name:</label>
+                                        <input type="text" class="edit-name" value="${escapeHtml(game.name)}" placeholder="Game name">
+                                    </div>
+                                    <div class="input-group" style="position: relative;">
+                                        <label>Executable:</label>
+                                        <div class="autocomplete-container">
+                                            <input type="text" class="edit-exec" value="${escapeHtml(game.executable)}" placeholder="E.g., game.exe" autocomplete="off">
+                                            <button type="button" class="dropdown-btn edit-dropdown-btn" title="Show running applications (ordered by last started)">▼</button>
+                                        </div>
+                                        <button type="button" class="refresh-btn edit-refresh-btn" title="Refresh list">↻</button>
+                                        <div class="autocomplete-list edit-autocomplete-list"></div>
+                                    </div>
+                                    <div class="hint">Dropdown shows non-system applications only, ordered by last started — type to filter, ↻ to refresh.</div>
+                                    <div class="error-message edit-error"></div>
+                                    <div class="form-row">
+                                        <button class="primary save-game-btn" data-id="${gameIdAttr}">Save</button>
+                                        <button class="cancel-game-btn" data-id="${gameIdAttr}">Cancel</button>
+                                    </div>
+                                </div>
+                                <div class="game-details">
+                                    <span class="game-stat">ID: ${gameIdAttr} | Exec: <span class="badge-exe">${escapeHtml(game.executable)}</span></span>
+                                    <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> across ${gameSessions.length} session(s)${isRunning ? ' + running' : ''}</span>
+                                    <span>Average: ${formatDuration(avgSecs)} | Last played: ${escapeHtml(lastPlayedStr)} ${isRunning ? '<span style="color:var(--primary-color)">● tracking</span>' : ''}</span>
+                                </div>
+                                ${sessionsBlock}
+                            </div>
+                        `;
+                    }
 
                     return `
                         <div class="game-item">
@@ -388,15 +931,16 @@
                                     <span class="game-name">${escapeHtml(game.name)}</span>
                                     ${isRunning ? '<span class="running-badge">Running</span>' : ''}
                                 </div>
-                                <button class="danger remove-btn" data-id="${gameIdAttr}">🗑 Remove</button>
+                                <div class="game-actions">
+                                    <button class="small edit-game-btn" data-id="${gameIdAttr}" title="Edit game">✎ Edit</button>
+                                    <button class="danger small remove-btn" data-id="${gameIdAttr}">🗑 Remove</button>
+                                </div>
                             </div>
                             <div class="game-details">
-                                <span class="game-stat">ID: ${gameIdAttr} | Exec: ${escapeHtml(game.executable)}</span>
-                                <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> (${gameSessions.length} session(s))</span>
+                                <span class="game-stat">ID: ${gameIdAttr} | Exec: <span class="badge-exe">${escapeHtml(game.executable)}</span> ${isRunning ? '<span style="color:var(--primary-color)">● tracking</span>' : '<span style="color:#888">○ idle</span>'}</span>
+                                <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> (${gameSessions.length} session(s)) — click to expand &amp; manage sessions</span>
                             </div>
-                            <div class="session-list" id="sessions-${gameIdAttr}">
-                                ${sessionsHtml}
-                            </div>
+                            ${sessionsBlock}
                         </div>
                     `;
                 }).join('');
@@ -406,17 +950,17 @@
                 html += '<div class="orphaned-header">Orphaned (Removed Games)</div>';
                 html += orphanedEntries.map(([gameId, gameSessions]) => {
                     let totalSecs = 0;
-                    for (const session of gameSessions) {
-                        totalSecs += session.duration_secs;
-                    }
+                    for (const session of gameSessions) totalSecs += session.duration_secs;
                     const sessionId = `orphaned-sessions-${escapeHtml(gameId)}`;
                     const sessionsHtml = gameSessions.map((s) => {
                         const startStr = new Date(s.start).toLocaleString();
                         const endStr = s.end ? new Date(s.end).toLocaleString() : '—';
                         return `
                             <div class="session-item">
-                                <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
-                                <span>${formatDuration(s.duration_secs)}</span>
+                                <div class="session-main">
+                                    <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
+                                    <span>${formatDuration(s.duration_secs)}</span>
+                                </div>
                             </div>
                         `;
                     }).join('');
@@ -440,37 +984,46 @@
                 }).join('');
             }
             
-            // Re-apply expanded state before innerHTML replacement
-            expandedGames.clear();
-            expandedOrphaned.clear();
-            document.querySelectorAll('.session-list.visible').forEach(el => {
-                const id = el.id;
-                if (id.startsWith('sessions-')) {
-                    expandedGames.add(id.slice('sessions-'.length));
-                } else if (id.startsWith('orphaned-sessions-')) {
-                    expandedOrphaned.add(id.slice('orphaned-sessions-'.length));
-                }
-            });
-
             gameListEl.innerHTML = html;
 
-            // Restore expanded state
             expandedGames.forEach(gameId => {
                 const list = document.getElementById(`sessions-${gameId}`);
-                const icon = document.querySelector(`.expand-icon[data-game-id="${gameId}"]`);
-                if (list) list.classList.add('visible');
-                if (icon) icon.classList.add('expanded');
+                const headerIcon = document.querySelector(`.game-header .expand-icon[data-game-id="${gameId}"]`);
+                const btn = document.querySelector(`.sessions-toggle-btn[data-game-id="${gameId}"]`);
+                const btnIcon = btn?.querySelector('.expand-icon');
+                const count = document.querySelectorAll(`#sessions-${gameId} .session-item`).length;
+                if (list) {
+                    list.style.display = 'flex';
+                    list.classList.add('visible');
+                }
+                if (headerIcon) headerIcon.classList.add('expanded');
+                if (btn) {
+                    if (btnIcon) { btnIcon.textContent = '▲'; btnIcon.classList.add('expanded'); }
+                    if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.textContent = `Hide Sessions (${count}) `;
+                    else if (btn.firstChild) btn.firstChild.textContent = `Hide Sessions (${count}) `;
+                }
             });
             expandedOrphaned.forEach(sessionId => {
                 const list = document.getElementById(sessionId);
                 const icon = document.querySelector(`.expand-icon[data-session-id="${sessionId}"]`);
-                if (list) list.classList.add('visible');
+                if (list) {
+                    list.style.display = 'flex';
+                    list.classList.add('visible');
+                }
                 if (icon) icon.classList.add('expanded');
             });
 
+            // Sessions panel stays hidden behind Show Sessions button even when editing (per request)
+            // Do not auto-expand sessions when editing – user must click Show Sessions / Add Session
+
+            attachGameEvents();
+        }
+
+        function attachGameEvents() {
             document.querySelectorAll('.remove-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
-                    const id = e.target.getAttribute('data-id');
+                    e.stopPropagation();
+                    const id = e.currentTarget.getAttribute('data-id');
                     if (confirm('Are you sure you want to remove this game?')) {
                         try {
                             await invoke('remove_game', { id });
@@ -482,9 +1035,66 @@
                 });
             });
 
+            document.querySelectorAll('.edit-game-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = e.currentTarget.getAttribute('data-id');
+                    editingGameId = id;
+                    expandedGames.add(id);
+                    loadGames();
+                    setTimeout(() => {
+                        const form = document.querySelector(`.game-edit-form[data-game-id="${id}"]`);
+                        if (form) {
+                            const input = form.querySelector('.edit-exec');
+                            const list = form.querySelector('.edit-autocomplete-list');
+                            const ddBtn = form.querySelector('.edit-dropdown-btn');
+                            const rBtn = form.querySelector('.edit-refresh-btn');
+                            if (input && list) setupAutocomplete(input, list, ddBtn);
+                            if (rBtn && !rBtn.dataset.bound) {
+                                rBtn.dataset.bound = '1';
+                                rBtn.addEventListener('click', async (ev) => {
+                                    ev.stopPropagation();
+                                    await loadRunningProcesses();
+                                    showAutocomplete(input, list);
+                                });
+                            }
+                            form.querySelector('.edit-name')?.focus();
+                        }
+                    }, 50);
+                });
+            });
+
+            document.querySelectorAll('.cancel-game-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    editingGameId = null;
+                    loadGames();
+                });
+            });
+
+            document.querySelectorAll('.save-game-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const id = e.currentTarget.getAttribute('data-id');
+                    const form = document.querySelector(`.game-edit-form[data-game-id="${id}"]`);
+                    const name = form.querySelector('.edit-name').value;
+                    const exe = form.querySelector('.edit-exec').value;
+                    const errEl = form.querySelector('.edit-error');
+                    errEl.textContent = '';
+                    try {
+                        await invoke('update_game', { id, name, executable: exe });
+                        editingGameId = null;
+                        loadGames();
+                    } catch (err) {
+                        errEl.textContent = String(err);
+                    }
+                });
+            });
+
             document.querySelectorAll('.delete-orphaned-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
-                    const id = e.target.getAttribute('data-id');
+                    e.stopPropagation();
+                    const id = e.currentTarget.getAttribute('data-id');
                     if (confirm(`Are you sure you want to delete ALL sessions for "${id}"? This cannot be undone.`)) {
                         try {
                             await invoke('remove_orphaned_session', { gameId: id });
@@ -497,17 +1107,30 @@
             });
 
             document.querySelectorAll('.game-header[data-game-id]').forEach(header => {
-                header.addEventListener('click', (e) => {
-                    if (e.target.closest('.remove-btn') || e.target.closest('.delete-orphaned-btn')) return;
-                    const gameId = header.getAttribute('data-game-id');
+                // Sessions are now hidden behind the "Show Sessions" button, not the header.
+                // Keep header non-interactive for sessions to avoid accidental toggles.
+                header.style.cursor = 'default';
+            });
+
+            document.querySelectorAll('.sessions-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
                     const sessionList = document.getElementById(`sessions-${gameId}`);
-                    const icon = header.querySelector('.expand-icon');
+                    const icon = btn.querySelector('.expand-icon');
                     if (sessionList) {
-                        const wasVisible = sessionList.classList.toggle('visible');
-                        if (icon) icon.classList.toggle('expanded');
-                        if (wasVisible) {
+                        const isHidden = sessionList.style.display === 'none' || !sessionList.classList.contains('visible');
+                        if (isHidden) {
+                            sessionList.style.display = 'flex';
+                            sessionList.classList.add('visible');
+                            if (icon) { icon.textContent = '▲'; icon.classList.add('expanded'); }
+                            btn.firstChild.textContent = `Hide Sessions (${document.querySelectorAll(`#sessions-${gameId} .session-item`).length}) `;
                             expandedGames.add(gameId);
                         } else {
+                            sessionList.style.display = 'none';
+                            sessionList.classList.remove('visible');
+                            if (icon) { icon.textContent = '▼'; icon.classList.remove('expanded'); }
+                            btn.firstChild.textContent = `Show Sessions (${document.querySelectorAll(`#sessions-${gameId} .session-item`).length}) `;
                             expandedGames.delete(gameId);
                         }
                     }
@@ -516,20 +1139,164 @@
 
             document.querySelectorAll('.game-header[data-session-id]').forEach(header => {
                 header.addEventListener('click', (e) => {
-                    if (e.target.closest('.delete-orphaned-btn')) return;
+                    if (e.target.closest('button')) return;
                     const sessionId = header.getAttribute('data-session-id');
                     const sessionList = document.getElementById(sessionId);
                     const icon = header.querySelector('.expand-icon');
                     if (sessionList) {
                         const wasVisible = sessionList.classList.toggle('visible');
                         if (icon) icon.classList.toggle('expanded');
-                        if (wasVisible) {
-                            expandedOrphaned.add(sessionId);
-                        } else {
-                            expandedOrphaned.delete(sessionId);
+                        if (wasVisible) expandedOrphaned.add(sessionId);
+                        else expandedOrphaned.delete(sessionId);
+                    }
+                });
+            });
+
+            document.querySelectorAll('.edit-session-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const idx = e.currentTarget.getAttribute('data-index');
+                    editingSessionKey = `${gameId}-${idx}`;
+                    expandedGames.add(gameId);
+                    loadGames();
+                });
+            });
+
+            document.querySelectorAll('.cancel-session-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    editingSessionKey = null;
+                    loadGames();
+                });
+            });
+
+            document.querySelectorAll('.save-session-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const index = parseInt(e.currentTarget.getAttribute('data-index'), 10);
+                    const form = document.querySelector(`.session-edit-form[data-game-id="${gameId}"][data-index="${index}"]`);
+                    if (!form) { alert('Edit form not found — please try again'); return; }
+                    const startEl = form.querySelector('.edit-start');
+                    const endEl = form.querySelector('.edit-end');
+                    const startLocal = startEl?.value ?? '';
+                    const endLocal = endEl?.value ?? '';
+                    const startIso = fromLocalDatetimeValue(startLocal);
+                    const endIso = endLocal ? fromLocalDatetimeValue(endLocal) : null;
+                    if (!startIso) {
+                        alert('Start time is required and must be valid');
+                        return;
+                    }
+                    try {
+                        await invoke('update_session', { gameId, index, start: startIso, end: endIso });
+                        editingSessionKey = null;
+                        loadGames();
+                    } catch (err) {
+                        alert(`Failed to update session: ${err}`);
+                    }
+                });
+            });
+
+            document.querySelectorAll('.delete-session-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const index = parseInt(e.currentTarget.getAttribute('data-index'), 10);
+                    if (!confirm('Delete this session? This cannot be undone.')) return;
+                    try {
+                        await invoke('delete_session', { gameId, index });
+                        loadGames();
+                    } catch (err) {
+                        alert(`Failed to delete: ${err}`);
+                    }
+                });
+            });
+
+            document.querySelectorAll('.add-session-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const form = document.getElementById(`add-session-${gameId}`);
+                    if (form) {
+                        const isHidden = form.style.display === 'none';
+                        form.style.display = isHidden ? 'block' : 'none';
+                        if (isHidden) {
+                            const nowLocal = toLocalDatetimeValue(new Date().toISOString());
+                            const endInput = form.querySelector('.add-end');
+                            const startInput = form.querySelector('.add-start');
+                            const hInput = form.querySelector('.add-hours');
+                            const mInput = form.querySelector('.add-minutes');
+                            if (endInput && !endInput.value) endInput.value = nowLocal;
+                            if (hInput) hInput.value = '';
+                            if (mInput) mInput.value = '';
+                            // Leave start empty until duration is entered, or let user edit directly
+                            if (startInput) startInput.value = '';
+                            // Attach recalc listeners once per form to avoid duplicate firing
+                            if (!form.dataset.recalcBound) {
+                                const recalc = () => recalcAddSessionStart(gameId);
+                                hInput?.addEventListener('input', recalc);
+                                mInput?.addEventListener('input', recalc);
+                                endInput?.addEventListener('input', () => {
+                                    const h = parseInt(hInput?.value || '0', 10) || 0;
+                                    const m = parseInt(mInput?.value || '0', 10) || 0;
+                                    if (h || m) recalcAddSessionStart(gameId);
+                                });
+                                form.dataset.recalcBound = '1';
+                            }
+                            expandedGames.add(gameId);
+                            const list = document.getElementById(`sessions-${gameId}`);
+                            if (list) list.classList.add('visible');
                         }
                     }
                 });
+            });
+
+            document.querySelectorAll('.cancel-add-session-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const form = document.getElementById(`add-session-${gameId}`);
+                    if (form) form.style.display = 'none';
+                });
+            });
+
+            document.querySelectorAll('.confirm-add-session-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const form = document.getElementById(`add-session-${gameId}`);
+                    if (!form) { alert('Add form not found'); return; }
+                    const startEl = form.querySelector('.add-start');
+                    const endEl = form.querySelector('.add-end');
+                    const startLocal = startEl?.value ?? '';
+                    const endLocal = endEl?.value ?? '';
+                    const startIso = fromLocalDatetimeValue(startLocal);
+                    const endIso = endLocal ? fromLocalDatetimeValue(endLocal) : null;
+                    if (!startIso) {
+                        alert('Start time is required');
+                        return;
+                    }
+                    try {
+                        await invoke('add_session', { gameId, start: startIso, end: endIso });
+                        form.style.display = 'none';
+                        const s = form.querySelector('.add-start'); if (s) s.value = '';
+                        const en = form.querySelector('.add-end'); if (en) en.value = '';
+                        const h = form.querySelector('.add-hours'); if (h) h.value = '';
+                        const m = form.querySelector('.add-minutes'); if (m) m.value = '';
+                        expandedGames.add(gameId);
+                        loadGames();
+                    } catch (err) {
+                        alert(`Failed to add session: ${escapeHtml(String(err))}`);
+                    }
+                });
+            });
+
+            document.querySelectorAll('.game-edit-form').forEach(form => {
+                const input = form.querySelector('.edit-exec');
+                const list = form.querySelector('.edit-autocomplete-list');
+                const ddBtn = form.querySelector('.edit-dropdown-btn');
+                if (input && list) setupAutocomplete(input, list, ddBtn);
             });
         }
 
@@ -545,20 +1312,23 @@
             }
 
             try {
-                // We let the backend handle ID generation & validation
                 await invoke('add_game', { name, executable: exec });
                 nameInput.value = '';
                 execInput.value = '';
+                hideAutocomplete(execAutocompleteList);
+                closeAddGame();
                 loadGames();
             } catch (err) {
-                errorMsg.textContent = err;
+                errorMsg.textContent = String(err);
             }
         }
 
         function escapeHtml(unsafe) {
-            if (!unsafe) return '';
-            return unsafe
-                 .toString()
+            if (unsafe === null || unsafe === undefined) return '';
+            // Preserve "0" and other falsy but valid values; only empty string is empty
+            const str = String(unsafe);
+            if (str === '') return '';
+            return str
                  .replace(/&/g, "&amp;")
                  .replace(/</g, "&lt;")
                  .replace(/>/g, "&gt;")
@@ -566,32 +1336,76 @@
                  .replace(/'/g, "&#039;");
         }
 
-        // Setup event listeners
-        refreshBtn.addEventListener('click', loadGames);
+        refreshBtn.addEventListener('click', () => {
+            if (isEditing() && !confirm('You have unsaved edits — refresh and discard changes?')) return;
+            loadGames();
+        });
         addBtn.addEventListener('click', addGame);
+        toggleAddGameBtn.addEventListener('click', openAddGame);
+        closeAddGameBtn.addEventListener('click', closeAddGame);
+        cancelAddGameBtn.addEventListener('click', closeAddGame);
+        refreshExeBtn.addEventListener('click', async () => {
+            await loadRunningProcesses();
+            showAutocomplete(execInput, execAutocompleteList);
+            execInput.focus();
+        });
         
         execInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') addGame();
         });
+        nameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addGame();
+        });
 
-        // Initial load
+        setupAutocomplete(execInput, execAutocompleteList, execDropdownBtn);
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.input-group') && !e.target.closest('.autocomplete-list')) {
+                document.querySelectorAll('.autocomplete-list.visible').forEach(el => el.classList.remove('visible'));
+            }
+        });
+
+        // Do not auto-refresh while user is editing — otherwise the
+        // 1s `renderGames()` re-creates the form DOM and the active input
+        // loses focus (reported bug when editing a game title).
+        function isEditing() {
+            if (editingGameId !== null || editingSessionKey !== null) return true;
+            // Any add-session form visible counts as editing (so you can use it)
+            const anyAddOpen = Array.from(document.querySelectorAll('.add-session-section')).some(el => el.style.display !== 'none' && el.offsetParent !== null);
+            if (anyAddOpen) return true;
+            const a = document.activeElement;
+            if (!a) return false;
+            if (a.id === 'game-name' || a.id === 'game-exec') return true;
+            if (a.classList.contains('edit-name') || a.classList.contains('edit-exec')) return true;
+            if (a.classList.contains('edit-start') || a.classList.contains('edit-end')) return true;
+            if (a.classList.contains('add-start') || a.classList.contains('add-end') || a.classList.contains('add-hours') || a.classList.contains('add-minutes')) return true;
+            if (a.closest && (a.closest('.game-edit-form') || a.closest('.session-edit-form') || a.closest('#add-game-section') || a.closest('.add-session-section'))) return true;
+            return false;
+        }
+
         loadGames();
+        loadRunningProcesses();
         
-        // Setup 1-second refresh interval for "Running" timer
-        let refreshInterval = setInterval(loadGames, 1000);
+        let refreshInterval = setInterval(() => {
+            if (isEditing()) return;
+            loadGames();
+        }, 1000);
         
-        // Pause refresh when window is hidden to save CPU
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 clearInterval(refreshInterval);
             } else {
-                loadGames();
-                refreshInterval = setInterval(loadGames, 1000);
+                if (!isEditing()) loadGames();
+                refreshInterval = setInterval(() => {
+                    if (isEditing()) return;
+                    loadGames();
+                }, 1000);
             }
         });
         
-        // Clean up interval when window is closed
-        window.addEventListener('unload', () => clearInterval(refreshInterval));
+        window.addEventListener('unload', () => {
+            clearInterval(refreshInterval);
+        });
     </script>
 </body>
 </html>

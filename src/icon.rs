@@ -51,12 +51,19 @@ pub fn icon_rgba() -> Vec<u8> {
 
 pub fn icon_png() -> Vec<u8> {
     let rgba = icon_rgba();
-    let img = image::RgbaImage::from_raw(32, 32, rgba)
-        .expect("icon_rgba() always produces exactly 32×32×4 bytes");
+    let img = match image::RgbaImage::from_raw(32, 32, rgba) {
+        Some(img) => img,
+        None => {
+            log::error!("Failed to create RgbaImage from raw buffer");
+            return Vec::new();
+        }
+    };
     let mut png_bytes = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut png_bytes);
-    img.write_to(&mut cursor, image::ImageFormat::Png)
-        .expect("writing PNG to an in-memory buffer should never fail");
+    if let Err(e) = img.write_to(&mut cursor, image::ImageFormat::Png) {
+        log::error!("Failed to write PNG to buffer: {}", e);
+        return Vec::new();
+    }
     png_bytes
 }
 

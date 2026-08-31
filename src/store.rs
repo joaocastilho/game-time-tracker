@@ -12,11 +12,11 @@ pub enum StoreError {
 
 pub fn load<T: DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<Option<T>, StoreError> {
     let path = path.as_ref();
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let contents = std::fs::read_to_string(path)?;
+    let contents = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
     let data = serde_json::from_str(&contents)?;
     Ok(Some(data))
 }
@@ -24,16 +24,53 @@ pub fn load<T: DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<Option<T>, S
 pub fn save<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<(), StoreError> {
     let path = path.as_ref();
 
-    let mut tmp_path = path.to_path_buf();
-    let file_name = tmp_path
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("data")
         .to_string();
-    tmp_path.set_file_name(format!("{}.tmp", file_name));
+
+    // Use a unique temp name to avoid TOCTOU races between concurrent
+    // tracker + UI writers saving the same file (e.g. sessions.json).
+    let tmp_path = {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let cnt = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let mut p = path.to_path_buf();
+        p.set_file_name(format!(
+            "{}.tmp.{}-{}-{}",
+            file_name,
+            std::process::id(),
+            nanos,
+            cnt
+        ));
+        p
+    };
 
     let json = serde_json::to_string_pretty(data)?;
-    std::fs::write(&tmp_path, json)?;
+
+    // Write + fsync the temp file so a power-loss does not leave a torn write.
+    let write_res: Result<(), std::io::Error> = (|| {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp_path)?;
+        f.write_all(json.as_bytes())?;
+        f.flush()?;
+        f.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(e.into());
+    }
 
     let result = std::fs::rename(&tmp_path, path);
 
@@ -41,8 +78,30 @@ pub fn save<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<(), Store
         let is_cross_device = e.kind() == std::io::ErrorKind::CrossesDevices;
 
         if is_cross_device {
-            std::fs::copy(&tmp_path, path)?;
+            // Copy to a second temp in the destination directory then atomic
+            // rename, so a crash mid-copy does not truncate the original file.
+            let mut tmp2 = path.to_path_buf();
+            let nanos2 = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            tmp2.set_file_name(format!(
+                "{}.tmp2.{}-{}-{:?}",
+                file_name,
+                std::process::id(),
+                nanos2,
+                std::thread::current().id()
+            ));
+            std::fs::copy(&tmp_path, &tmp2)?;
+            if let Ok(f) = std::fs::File::open(&tmp2) {
+                let _ = f.sync_all();
+            }
+            let res2 = std::fs::rename(&tmp2, path);
             let _ = std::fs::remove_file(&tmp_path);
+            if let Err(e2) = res2 {
+                let _ = std::fs::remove_file(&tmp2);
+                return Err(e2.into());
+            }
         } else {
             let _ = std::fs::remove_file(&tmp_path);
             return Err(e.into());

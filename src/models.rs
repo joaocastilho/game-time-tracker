@@ -11,7 +11,7 @@ pub struct Game {
 
 impl Game {
     pub fn generate_id(name: &str) -> String {
-        let id = name
+        let mut id = name
             .trim()
             .to_lowercase()
             .chars()
@@ -23,23 +23,35 @@ impl Game {
             .join("-");
 
         if id.is_empty() {
-            "unnamed-game".to_string()
-        } else {
-            id
+            id = "unnamed-game".to_string();
         }
+        // Cap length to avoid JSON key bloat / path issues (64 chars is plenty)
+        if id.len() > 64 {
+            id.truncate(64);
+            // Avoid trailing dash after truncation
+            id = id.trim_end_matches('-').to_string();
+            if id.is_empty() {
+                id = "unnamed-game".to_string();
+            }
+        }
+        id
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub start: DateTime<Utc>,
+    #[serde(default)]
     pub end: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub duration_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct State {
+    #[serde(default)]
     pub active_sessions: HashMap<String, Session>,
+    #[serde(default)]
     pub last_seen: Option<DateTime<Utc>>,
 }
 
