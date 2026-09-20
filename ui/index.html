@@ -505,9 +505,61 @@
             display: flex;
             justify-content: flex-end;
         }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .view {
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .view.hidden {
+            display: none;
+        }
+
+        .sessions-page-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 6px;
+            padding-bottom: 12px;
+        }
+
+        .sessions-page-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sessions-page-head h2 {
+            margin: 0;
+        }
+
+        #sessions-add-form {
+            flex-shrink: 0;
+            max-height: 40vh;
+            overflow-y: auto;
+        }
+
+        #sessions-add-form.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <div id="games-view" class="view">
     <div class="header-controls">
         <h1>Game Time Tracker</h1>
         <button id="refresh-btn">↻ Refresh</button>
@@ -550,15 +602,56 @@
             <button id="cancel-add-game-btn" class="small">Cancel</button>
         </div>
     </div>
+    </div>
+
+    <div id="sessions-view" class="view hidden">
+        <div class="sessions-page-head">
+            <button id="back-btn" class="small" title="Back to game list">← Back</button>
+            <h2 id="sessions-title">Sessions</h2>
+        </div>
+        <div id="sessions-meta" class="game-details" style="flex-shrink:0"></div>
+        <div id="sessions-page-actions" style="display:flex; gap:8px; flex-shrink:0">
+            <button id="toggle-add-session-btn" class="small">+ Add Session</button>
+            <button id="delete-orphaned-page-btn" class="small danger hidden">🗑 Delete All</button>
+        </div>
+        <div id="sessions-add-form" class="hidden">
+            <div class="session-edit-form" style="margin:0; flex-direction:column; align-items:stretch">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                    <label style="width:auto">Duration:</label>
+                    <input type="number" class="add-hours" placeholder="Hours" min="0" style="width:70px; flex:0 0 70px">
+                    <span>h</span>
+                    <input type="number" class="add-minutes" placeholder="Mins" min="0" max="59" style="width:70px; flex:0 0 70px">
+                    <span>m</span>
+                    <span class="hint" style="margin-left:8px">→ auto-fills start from end</span>
+                </div>
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; width:100%">
+                    <label>Start:</label><input type="datetime-local" step="1" class="add-start" style="flex:1 1 200px">
+                    <label>End:</label><input type="datetime-local" step="1" class="add-end" style="flex:1 1 200px">
+                </div>
+                <div class="hint">End defaults to now; edit start/end directly if needed. Changing hours/mins recalculates start from end.</div>
+                <div class="form-actions">
+                    <button id="confirm-add-session-btn" class="primary small">Add</button>
+                    <button id="cancel-add-session-btn" class="small">Cancel</button>
+                </div>
+            </div>
+        </div>
+        <div id="sessions-list" class="sessions-page-list"></div>
+    </div>
 
     <script type="module">
         const invoke = window.__TAURI__?.core?.invoke ?? (async () => { throw new Error('Tauri API not available (running outside Tauri)'); });
 
-        const expandedGames = new Set();
-        const expandedOrphaned = new Set();
         let runningProcesses = [];
         let editingGameId = null;
         let editingSessionKey = null;
+        // Sessions live on a dedicated page now (no inline expand).
+        // view = { name: 'games' } | { name: 'sessions', gameId, orphaned }
+        let view = { name: 'games' };
+        let lastGames = [];
+        let lastSessionsMap = {};
+        let lastState = { active_sessions: {} };
+        let lastOrphaned = {};
+        let sessionsAddOpen = false;
         
         const gameListEl = document.getElementById('game-list');
         const refreshBtn = document.getElementById('refresh-btn');
@@ -573,6 +666,17 @@
         const toggleAddGameBtn = document.getElementById('toggle-add-game-btn');
         const closeAddGameBtn = document.getElementById('close-add-game-btn');
         const cancelAddGameBtn = document.getElementById('cancel-add-game-btn');
+        const gamesView = document.getElementById('games-view');
+        const sessionsView = document.getElementById('sessions-view');
+        const sessionsTitle = document.getElementById('sessions-title');
+        const sessionsMeta = document.getElementById('sessions-meta');
+        const sessionsListEl = document.getElementById('sessions-list');
+        const sessionsAddForm = document.getElementById('sessions-add-form');
+        const toggleAddSessionBtn = document.getElementById('toggle-add-session-btn');
+        const confirmAddSessionBtn = document.getElementById('confirm-add-session-btn');
+        const cancelAddSessionBtn = document.getElementById('cancel-add-session-btn');
+        const deleteOrphanedPageBtn = document.getElementById('delete-orphaned-page-btn');
+        const backBtn = document.getElementById('back-btn');
 
         // Remember last window size (Tauri LogicalSize) via localStorage + Tauri window API
         (async () => {
@@ -633,7 +737,8 @@
             fitPending = true;
             try {
                 await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-                const list = document.getElementById('game-list');
+                const onSessions = view.name === 'sessions' && !sessionsView.classList.contains('hidden');
+                const list = onSessions ? sessionsListEl : document.getElementById('game-list');
                 if (!list) return;
                 const extraY = Math.max(0, list.scrollHeight - list.clientHeight);
                 const extraX = Math.max(0, document.body.scrollWidth - document.body.clientWidth);
@@ -685,8 +790,8 @@
             return d.toISOString();
         }
 
-        function recalcAddSessionStart(gameId) {
-            const form = document.getElementById(`add-session-${gameId}`);
+        function recalcAddSessionStart() {
+            const form = sessionsAddForm;
             if (!form) return;
             const h = parseInt(form.querySelector('.add-hours')?.value || '0', 10) || 0;
             const m = parseInt(form.querySelector('.add-minutes')?.value || '0', 10) || 0;
@@ -719,10 +824,234 @@
             try {
                 const data = await invoke('get_ui_data');
                 const orphaned = await invoke('get_orphaned_sessions');
-                renderGames(data.games, data.sessions, data.state, orphaned);
+                lastGames = data.games || [];
+                lastSessionsMap = data.sessions || {};
+                lastState = data.state || { active_sessions: {} };
+                lastOrphaned = orphaned || {};
+                if (view.name === 'sessions') {
+                    renderSessionsPage();
+                } else {
+                    renderGames(lastGames, lastSessionsMap, lastState, lastOrphaned);
+                }
             } catch (e) {
                 console.error('Failed to load games:', e);
-                gameListEl.innerHTML = `<div class="empty-state" style="color: var(--danger-color)">Failed to load data: ${escapeHtml(String(e))}</div>`;
+                if (view.name === 'sessions') {
+                    sessionsListEl.innerHTML = `<div class="empty-state" style="color: var(--danger-color)">Failed to load data: ${escapeHtml(String(e))}</div>`;
+                } else {
+                    gameListEl.innerHTML = `<div class="empty-state" style="color: var(--danger-color)">Failed to load data: ${escapeHtml(String(e))}</div>`;
+                }
+            }
+        }
+
+        function showView(name) {
+            if (name === 'sessions') {
+                gamesView.classList.add('hidden');
+                sessionsView.classList.remove('hidden');
+            } else {
+                sessionsView.classList.add('hidden');
+                gamesView.classList.remove('hidden');
+            }
+        }
+
+        function openSessions(gameId, orphaned) {
+            editingSessionKey = null;
+            sessionsAddOpen = false;
+            sessionsAddForm.classList.add('hidden');
+            view = { name: 'sessions', gameId, orphaned: !!orphaned };
+            showView('sessions');
+            renderSessionsPage();
+            fitWindowToContent();
+        }
+
+        function goBackToGames() {
+            view = { name: 'games' };
+            editingSessionKey = null;
+            sessionsAddOpen = false;
+            sessionsAddForm.classList.add('hidden');
+            showView('games');
+            renderGames(lastGames, lastSessionsMap, lastState, lastOrphaned);
+        }
+
+        function gameTotals(game, gameSessions, nowSecs) {
+            let totalSecs = 0;
+            for (const s of gameSessions) totalSecs += s.duration_secs;
+            const activeSession = (lastState.active_sessions || {})[game.id];
+            if (activeSession) {
+                const startTime = new Date(activeSession.start).getTime() / 1000;
+                totalSecs += Math.floor(Math.max(0, nowSecs - startTime));
+            }
+            return { totalSecs, isRunning: !!activeSession };
+        }
+
+        function renderSessionsPage() {
+            const { gameId, orphaned } = view;
+            const now = Math.floor(Date.now() / 1000);
+            if (orphaned) {
+                const gameSessions = lastOrphaned[gameId];
+                if (!gameSessions) { goBackToGames(); return; }
+                let totalSecs = 0;
+                for (const s of gameSessions) totalSecs += s.duration_secs;
+                sessionsTitle.textContent = gameId;
+                sessionsMeta.innerHTML = `<span>${gameSessions.length} session(s), ${formatDuration(totalSecs)} total — removed game</span>`;
+                toggleAddSessionBtn.style.display = 'none';
+                deleteOrphanedPageBtn.classList.remove('hidden');
+                sessionsAddForm.classList.add('hidden');
+                sessionsAddOpen = false;
+                sessionsListEl.innerHTML = gameSessions.map((s) => {
+                    const startStr = new Date(s.start).toLocaleString();
+                    const endStr = s.end ? new Date(s.end).toLocaleString() : '—';
+                    return `
+                        <div class="session-item">
+                            <div class="session-main">
+                                <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
+                                <span>${formatDuration(s.duration_secs)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                attachSessionsEvents();
+                fitWindowToContent();
+                return;
+            }
+            const game = lastGames.find((g) => g.id === gameId);
+            if (!game) { goBackToGames(); return; }
+            const gameSessions = lastSessionsMap[game.id] || [];
+            const { totalSecs, isRunning } = gameTotals(game, gameSessions, now);
+            sessionsTitle.textContent = `${game.name} — Sessions`;
+            sessionsMeta.innerHTML = `<span class="game-stat">Exec: <span class="badge-exe">${escapeHtml(game.executable)}</span> ${isRunning ? '<span style="color:var(--primary-color)">● tracking</span>' : '<span style="color:#888">○ idle</span>'}</span><span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> (${gameSessions.length} session(s))${isRunning ? ' + running' : ''}</span>`;
+            toggleAddSessionBtn.style.display = '';
+            deleteOrphanedPageBtn.classList.add('hidden');
+            if (!sessionsAddOpen) sessionsAddForm.classList.add('hidden');
+            else sessionsAddForm.classList.remove('hidden');
+            sessionsListEl.innerHTML = gameSessions.length ? gameSessions.map((s, idx) => {
+                const startStr = new Date(s.start).toLocaleString();
+                const endStr = s.end ? new Date(s.end).toLocaleString() : '— (ongoing)';
+                const key = `${game.id}-${idx}`;
+                if (editingSessionKey === key) {
+                    return `
+                        <div class="session-edit-form" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" style="margin-left:0">
+                            <label>Start:</label><input type="datetime-local" step="1" class="edit-start" value="${escapeHtml(toLocalDatetimeValue(s.start))}">
+                            <label>End:</label><input type="datetime-local" step="1" class="edit-end" value="${escapeHtml(toLocalDatetimeValue(s.end))}">
+                            <div class="form-actions">
+                                <button class="primary small save-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}">Save</button>
+                                <button class="small cancel-session-btn" data-key="${escapeHtml(key)}">Cancel</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                return `
+                    <div class="session-item" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" style="padding-left:0">
+                        <div class="session-main">
+                            <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
+                            <span>${formatDuration(s.duration_secs)}</span>
+                        </div>
+                        <div class="session-actions">
+                            <button class="small icon-btn edit-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" title="Edit session">✎</button>
+                            <button class="small danger icon-btn delete-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" title="Delete session">🗑</button>
+                        </div>
+                    </div>
+                `;
+            }).join('') : '<div class="hint" style="padding:12px 0">No sessions yet — add one below</div>';
+            attachSessionsEvents();
+            fitWindowToContent();
+        }
+
+        function attachSessionsEvents() {
+            sessionsListEl.querySelectorAll('.edit-session-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const idx = e.currentTarget.getAttribute('data-index');
+                    editingSessionKey = `${gameId}-${idx}`;
+                    renderSessionsPage();
+                });
+            });
+            sessionsListEl.querySelectorAll('.cancel-session-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    editingSessionKey = null;
+                    renderSessionsPage();
+                });
+            });
+            sessionsListEl.querySelectorAll('.save-session-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const index = parseInt(e.currentTarget.getAttribute('data-index'), 10);
+                    const form = sessionsListEl.querySelector(`.session-edit-form[data-game-id="${gameId}"][data-index="${index}"]`);
+                    if (!form) { alert('Edit form not found — please try again'); return; }
+                    const startIso = fromLocalDatetimeValue(form.querySelector('.edit-start')?.value ?? '');
+                    const endLocal = form.querySelector('.edit-end')?.value ?? '';
+                    const endIso = endLocal ? fromLocalDatetimeValue(endLocal) : null;
+                    if (!startIso) { alert('Start time is required and must be valid'); return; }
+                    try {
+                        await invoke('update_session', { gameId, index, start: startIso, end: endIso });
+                        editingSessionKey = null;
+                        loadGames();
+                    } catch (err) {
+                        alert(`Failed to update session: ${err}`);
+                    }
+                });
+            });
+            sessionsListEl.querySelectorAll('.delete-session-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const gameId = e.currentTarget.getAttribute('data-game-id');
+                    const index = parseInt(e.currentTarget.getAttribute('data-index'), 10);
+                    if (!confirm('Delete this session? This cannot be undone.')) return;
+                    try {
+                        await invoke('delete_session', { gameId, index });
+                        loadGames();
+                    } catch (err) {
+                        alert(`Failed to delete: ${err}`);
+                    }
+                });
+            });
+        }
+
+        function openSessionsAddForm() {
+            sessionsAddOpen = true;
+            sessionsAddForm.classList.remove('hidden');
+            const nowLocal = toLocalDatetimeValue(new Date().toISOString());
+            const endInput = sessionsAddForm.querySelector('.add-end');
+            const startInput = sessionsAddForm.querySelector('.add-start');
+            const hInput = sessionsAddForm.querySelector('.add-hours');
+            const mInput = sessionsAddForm.querySelector('.add-minutes');
+            if (endInput && !endInput.value) endInput.value = nowLocal;
+            if (hInput) hInput.value = '';
+            if (mInput) mInput.value = '';
+            if (startInput) startInput.value = '';
+            if (!sessionsAddForm.dataset.recalcBound) {
+                const recalc = () => recalcAddSessionStart();
+                hInput?.addEventListener('input', recalc);
+                mInput?.addEventListener('input', recalc);
+                endInput?.addEventListener('input', () => {
+                    const h = parseInt(hInput?.value || '0', 10) || 0;
+                    const m = parseInt(mInput?.value || '0', 10) || 0;
+                    if (h || m) recalcAddSessionStart();
+                });
+                sessionsAddForm.dataset.recalcBound = '1';
+            }
+            fitWindowToContent();
+        }
+
+        async function confirmSessionsAdd() {
+            const gameId = view.gameId;
+            const startIso = fromLocalDatetimeValue(sessionsAddForm.querySelector('.add-start')?.value ?? '');
+            const endLocal = sessionsAddForm.querySelector('.add-end')?.value ?? '';
+            const endIso = endLocal ? fromLocalDatetimeValue(endLocal) : null;
+            if (!startIso) { alert('Start time is required'); return; }
+            try {
+                await invoke('add_session', { gameId, start: startIso, end: endIso });
+                sessionsAddForm.querySelector('.add-start').value = '';
+                sessionsAddForm.querySelector('.add-end').value = '';
+                sessionsAddForm.querySelector('.add-hours').value = '';
+                sessionsAddForm.querySelector('.add-minutes').value = '';
+                sessionsAddOpen = false;
+                sessionsAddForm.classList.add('hidden');
+                loadGames();
+            } catch (err) {
+                alert(`Failed to add session: ${escapeHtml(String(err))}`);
             }
         }
 
@@ -818,25 +1147,17 @@
         function renderGames(games, sessionsMap, state, orphanedMap) {
             const orphanedEntries = Object.entries(orphanedMap || {}).sort((a, b) => a[0].localeCompare(b[0]));
 
-            const prevExpandedGames = new Set();
-            const prevExpandedOrphaned = new Set();
-            document.querySelectorAll('.session-list.visible').forEach(el => {
-                const id = el.id;
-                if (id.startsWith('sessions-')) prevExpandedGames.add(id.slice(9));
-                else if (id.startsWith('orphaned-sessions-')) prevExpandedOrphaned.add(id.slice(18));
-            });
-            prevExpandedGames.forEach(v => expandedGames.add(v));
-            prevExpandedOrphaned.forEach(v => expandedOrphaned.add(v));
-
             if ((!games || games.length === 0) && orphanedEntries.length === 0) {
                 gameListEl.innerHTML = '<div class="empty-state">No games tracked yet. Click “Add Game” to start.</div>';
+                attachGameEvents();
+                fitWindowToContent();
                 return;
             }
 
             const now = Math.floor(Date.now() / 1000);
-            
+
             let html = '';
-            
+
             if (games && games.length > 0) {
                 html += games.map((game) => {
                     let totalSecs = 0;
@@ -846,7 +1167,7 @@
                     }
                     const activeSession = state.active_sessions[game.id];
                     const isRunning = !!activeSession;
-                    
+
                     if (activeSession) {
                         const startTime = new Date(activeSession.start).getTime() / 1000;
                         const elapsed = Math.floor(Math.max(0, now - startTime));
@@ -854,73 +1175,6 @@
                     }
 
                     const isEditingThis = editingGameId === game.id;
-
-                    const sessionsHtml = gameSessions.map((s, idx) => {
-                        const startStr = new Date(s.start).toLocaleString();
-                        const endStr = s.end ? new Date(s.end).toLocaleString() : '— (ongoing)';
-                        const key = `${game.id}-${idx}`;
-                        const isEditingThisSession = editingSessionKey === key;
-                        if (isEditingThisSession) {
-                            return `
-                                <div class="session-edit-form" data-game-id="${escapeHtml(game.id)}" data-index="${idx}">
-                                    <label>Start:</label><input type="datetime-local" step="1" class="edit-start" value="${escapeHtml(toLocalDatetimeValue(s.start))}">
-                                    <label>End:</label><input type="datetime-local" step="1" class="edit-end" value="${escapeHtml(toLocalDatetimeValue(s.end))}">
-                                    <div class="form-actions">
-                                        <button class="primary small save-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}">Save</button>
-                                        <button class="small cancel-session-btn" data-key="${escapeHtml(key)}">Cancel</button>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                        return `
-                            <div class="session-item" data-game-id="${escapeHtml(game.id)}" data-index="${idx}">
-                                <div class="session-main">
-                                    <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
-                                    <span>${formatDuration(s.duration_secs)}</span>
-                                </div>
-                                <div class="session-actions">
-                                    <button class="small icon-btn edit-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" title="Edit session">✎</button>
-                                    <button class="small danger icon-btn delete-session-btn" data-game-id="${escapeHtml(game.id)}" data-index="${idx}" title="Delete session">🗑</button>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-
-                    const addSessionForm = `
-                        <div class="add-session-section" id="add-session-${escapeHtml(game.id)}" style="display:none">
-                            <div class="session-edit-form" style="margin:0; flex-direction:column; align-items:stretch">
-                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-                                    <label style="width:auto">Duration:</label>
-                                    <input type="number" class="add-hours" placeholder="Hours" min="0" style="width:70px; flex:0 0 70px">
-                                    <span>h</span>
-                                    <input type="number" class="add-minutes" placeholder="Mins" min="0" max="59" style="width:70px; flex:0 0 70px">
-                                    <span>m</span>
-                                    <span class="hint" style="margin-left:8px">→ auto-fills start from end</span>
-                                </div>
-                                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; width:100%">
-                                    <label>Start:</label><input type="datetime-local" step="1" class="add-start" style="flex:1 1 200px">
-                                    <label>End:</label><input type="datetime-local" step="1" class="add-end" style="flex:1 1 200px">
-                                </div>
-                                <div class="hint">End defaults to now; edit start/end directly if needed. Changing hours/mins recalculates start from end.</div>
-                                <div class="form-actions">
-                                    <button class="primary small confirm-add-session-btn" data-game-id="${escapeHtml(game.id)}">Add</button>
-                                    <button class="small cancel-add-session-btn" data-game-id="${escapeHtml(game.id)}">Cancel</button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    const sessionsToggleBtn = `<button class="small sessions-toggle-btn" data-game-id="${escapeHtml(game.id)}" style="margin-top:16px; padding:6px 12px; width:100%; justify-content:center; display:flex; gap:6px"><span>Show Sessions (${gameSessions.length})</span><span class="expand-icon" style="margin:0">▼</span></button>`;
-                    const addSessionBtn = `<button class="small add-session-toggle-btn" data-game-id="${escapeHtml(game.id)}" style="margin-top:14px; padding:6px 12px">+ Add Session</button>`;
-
-                    const sessionsBlock = `
-                        ${sessionsToggleBtn}
-                        <div class="session-list" id="sessions-${escapeHtml(game.id)}" style="display:none">
-                            ${gameSessions.length ? sessionsHtml : '<div class="hint" style="padding:12px 0 4px 16px">No sessions yet — add one below</div>'}
-                            <div style="margin-top:12px">${addSessionBtn}</div>
-                            ${addSessionForm}
-                        </div>
-                    `;
-
                     const gameIdAttr = escapeHtml(game.id);
 
                     if (isEditingThis) {
@@ -960,16 +1214,15 @@
                                     <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> across ${gameSessions.length} session(s)${isRunning ? ' + running' : ''}</span>
                                     <span>Average: ${formatDuration(avgSecs)} | Last played: ${escapeHtml(lastPlayedStr)} ${isRunning ? '<span style="color:var(--primary-color)">● tracking</span>' : ''}</span>
                                 </div>
-                                ${sessionsBlock}
+                                <button class="small sessions-open-btn" data-id="${gameIdAttr}" style="margin-top:16px; padding:6px 12px; width:100%; justify-content:center; display:flex; gap:6px"><span>Sessions (${gameSessions.length}) →</span></button>
                             </div>
                         `;
                     }
 
                     return `
                         <div class="game-item">
-                            <div class="game-header" data-game-id="${gameIdAttr}">
+                            <div class="game-header" data-game-id="${gameIdAttr}" style="cursor:default">
                                 <div class="game-title-area">
-                                    <span class="expand-icon" data-game-id="${gameIdAttr}">▶</span>
                                     <span class="game-name">${escapeHtml(game.name)}</span>
                                     ${isRunning ? '<span class="running-badge">Running</span>' : ''}
                                 </div>
@@ -980,9 +1233,9 @@
                             </div>
                             <div class="game-details">
                                 <span class="game-stat">ID: ${gameIdAttr} | Exec: <span class="badge-exe">${escapeHtml(game.executable)}</span> ${isRunning ? '<span style="color:var(--primary-color)">● tracking</span>' : '<span style="color:#888">○ idle</span>'}</span>
-                                <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> (${gameSessions.length} session(s)) — click to expand &amp; manage sessions</span>
+                                <span>Total Play Time: <strong>${formatDuration(totalSecs)}</strong> (${gameSessions.length} session(s))</span>
                             </div>
-                            ${sessionsBlock}
+                            <button class="small sessions-open-btn" data-id="${gameIdAttr}" style="margin-top:16px; padding:6px 12px; width:100%; justify-content:center; display:flex; gap:6px"><span>Sessions (${gameSessions.length}) →</span></button>
                         </div>
                     `;
                 }).join('');
@@ -993,24 +1246,10 @@
                 html += orphanedEntries.map(([gameId, gameSessions]) => {
                     let totalSecs = 0;
                     for (const session of gameSessions) totalSecs += session.duration_secs;
-                    const sessionId = `orphaned-sessions-${escapeHtml(gameId)}`;
-                    const sessionsHtml = gameSessions.map((s) => {
-                        const startStr = new Date(s.start).toLocaleString();
-                        const endStr = s.end ? new Date(s.end).toLocaleString() : '—';
-                        return `
-                            <div class="session-item">
-                                <div class="session-main">
-                                    <span>${escapeHtml(startStr)} → ${escapeHtml(endStr)}</span>
-                                    <span>${formatDuration(s.duration_secs)}</span>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
                     return `
                         <div class="game-item orphaned-item">
-                            <div class="game-header" data-session-id="${sessionId}">
+                            <div class="game-header" style="cursor:default">
                                 <div class="game-title-area">
-                                    <span class="expand-icon" data-session-id="${sessionId}">▶</span>
                                     <span class="game-name orphaned">${escapeHtml(gameId)}</span>
                                 </div>
                                 <button class="danger delete-orphaned-btn" data-id="${escapeHtml(gameId)}">🗑 Delete</button>
@@ -1018,45 +1257,13 @@
                             <div class="game-details">
                                 <span>${gameSessions.length} session(s), ${formatDuration(totalSecs)} total</span>
                             </div>
-                            <div class="session-list" id="${sessionId}">
-                                ${sessionsHtml}
-                            </div>
+                            <button class="small sessions-open-btn" data-id="${escapeHtml(gameId)}" data-orphaned="1" style="margin-top:16px; padding:6px 12px; width:100%; justify-content:center; display:flex; gap:6px"><span>Sessions (${gameSessions.length}) →</span></button>
                         </div>
                     `;
                 }).join('');
             }
-            
+
             gameListEl.innerHTML = html;
-
-            expandedGames.forEach(gameId => {
-                const list = document.getElementById(`sessions-${gameId}`);
-                const headerIcon = document.querySelector(`.game-header .expand-icon[data-game-id="${gameId}"]`);
-                const btn = document.querySelector(`.sessions-toggle-btn[data-game-id="${gameId}"]`);
-                const btnIcon = btn?.querySelector('.expand-icon');
-                const count = document.querySelectorAll(`#sessions-${gameId} .session-item`).length;
-                if (list) {
-                    list.style.display = 'flex';
-                    list.classList.add('visible');
-                }
-                if (headerIcon) headerIcon.classList.add('expanded');
-                if (btn) {
-                    if (btnIcon) { btnIcon.textContent = '▲'; btnIcon.classList.add('expanded'); }
-                    if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.textContent = `Hide Sessions (${count}) `;
-                    else if (btn.firstChild) btn.firstChild.textContent = `Hide Sessions (${count}) `;
-                }
-            });
-            expandedOrphaned.forEach(sessionId => {
-                const list = document.getElementById(sessionId);
-                const icon = document.querySelector(`.expand-icon[data-session-id="${sessionId}"]`);
-                if (list) {
-                    list.style.display = 'flex';
-                    list.classList.add('visible');
-                }
-                if (icon) icon.classList.add('expanded');
-            });
-
-            // Sessions panel stays hidden behind Show Sessions button even when editing (per request)
-            // Do not auto-expand sessions when editing – user must click Show Sessions / Add Session
 
             attachGameEvents();
             fitWindowToContent();
@@ -1083,7 +1290,6 @@
                     e.stopPropagation();
                     const id = e.currentTarget.getAttribute('data-id');
                     editingGameId = id;
-                    expandedGames.add(id);
                     loadGames();
                     setTimeout(() => {
                         const form = document.querySelector(`.game-edit-form[data-game-id="${id}"]`);
@@ -1149,189 +1355,12 @@
                 });
             });
 
-            document.querySelectorAll('.game-header[data-game-id]').forEach(header => {
-                // Sessions are now hidden behind the "Show Sessions" button, not the header.
-                // Keep header non-interactive for sessions to avoid accidental toggles.
-                header.style.cursor = 'default';
-            });
-
-            document.querySelectorAll('.sessions-toggle-btn').forEach(btn => {
+            document.querySelectorAll('.sessions-open-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const gameId = e.currentTarget.getAttribute('data-game-id');
-                    const sessionList = document.getElementById(`sessions-${gameId}`);
-                    const icon = btn.querySelector('.expand-icon');
-                    if (sessionList) {
-                        const isHidden = sessionList.style.display === 'none' || !sessionList.classList.contains('visible');
-                        if (isHidden) {
-                            sessionList.style.display = 'flex';
-                            sessionList.classList.add('visible');
-                            if (icon) { icon.textContent = '▲'; icon.classList.add('expanded'); }
-                            btn.firstChild.textContent = `Hide Sessions (${document.querySelectorAll(`#sessions-${gameId} .session-item`).length}) `;
-                            expandedGames.add(gameId);
-                        } else {
-                            sessionList.style.display = 'none';
-                            sessionList.classList.remove('visible');
-                            if (icon) { icon.textContent = '▼'; icon.classList.remove('expanded'); }
-                            btn.firstChild.textContent = `Show Sessions (${document.querySelectorAll(`#sessions-${gameId} .session-item`).length}) `;
-                            expandedGames.delete(gameId);
-                        }
-                    }
-                });
-            });
-
-            document.querySelectorAll('.game-header[data-session-id]').forEach(header => {
-                header.addEventListener('click', (e) => {
-                    if (e.target.closest('button')) return;
-                    const sessionId = header.getAttribute('data-session-id');
-                    const sessionList = document.getElementById(sessionId);
-                    const icon = header.querySelector('.expand-icon');
-                    if (sessionList) {
-                        const wasVisible = sessionList.classList.toggle('visible');
-                        if (icon) icon.classList.toggle('expanded');
-                        if (wasVisible) expandedOrphaned.add(sessionId);
-                        else expandedOrphaned.delete(sessionId);
-                    }
-                });
-            });
-
-            document.querySelectorAll('.edit-session-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const gameId = e.currentTarget.getAttribute('data-game-id');
-                    const idx = e.currentTarget.getAttribute('data-index');
-                    editingSessionKey = `${gameId}-${idx}`;
-                    expandedGames.add(gameId);
-                    loadGames();
-                });
-            });
-
-            document.querySelectorAll('.cancel-session-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    editingSessionKey = null;
-                    loadGames();
-                });
-            });
-
-            document.querySelectorAll('.save-session-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const gameId = e.currentTarget.getAttribute('data-game-id');
-                    const index = parseInt(e.currentTarget.getAttribute('data-index'), 10);
-                    const form = document.querySelector(`.session-edit-form[data-game-id="${gameId}"][data-index="${index}"]`);
-                    if (!form) { alert('Edit form not found — please try again'); return; }
-                    const startEl = form.querySelector('.edit-start');
-                    const endEl = form.querySelector('.edit-end');
-                    const startLocal = startEl?.value ?? '';
-                    const endLocal = endEl?.value ?? '';
-                    const startIso = fromLocalDatetimeValue(startLocal);
-                    const endIso = endLocal ? fromLocalDatetimeValue(endLocal) : null;
-                    if (!startIso) {
-                        alert('Start time is required and must be valid');
-                        return;
-                    }
-                    try {
-                        await invoke('update_session', { gameId, index, start: startIso, end: endIso });
-                        editingSessionKey = null;
-                        loadGames();
-                    } catch (err) {
-                        alert(`Failed to update session: ${err}`);
-                    }
-                });
-            });
-
-            document.querySelectorAll('.delete-session-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const gameId = e.currentTarget.getAttribute('data-game-id');
-                    const index = parseInt(e.currentTarget.getAttribute('data-index'), 10);
-                    if (!confirm('Delete this session? This cannot be undone.')) return;
-                    try {
-                        await invoke('delete_session', { gameId, index });
-                        loadGames();
-                    } catch (err) {
-                        alert(`Failed to delete: ${err}`);
-                    }
-                });
-            });
-
-            document.querySelectorAll('.add-session-toggle-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const gameId = e.currentTarget.getAttribute('data-game-id');
-                    const form = document.getElementById(`add-session-${gameId}`);
-                    if (form) {
-                        const isHidden = form.style.display === 'none';
-                        form.style.display = isHidden ? 'block' : 'none';
-                        if (isHidden) {
-                            const nowLocal = toLocalDatetimeValue(new Date().toISOString());
-                            const endInput = form.querySelector('.add-end');
-                            const startInput = form.querySelector('.add-start');
-                            const hInput = form.querySelector('.add-hours');
-                            const mInput = form.querySelector('.add-minutes');
-                            if (endInput && !endInput.value) endInput.value = nowLocal;
-                            if (hInput) hInput.value = '';
-                            if (mInput) mInput.value = '';
-                            // Leave start empty until duration is entered, or let user edit directly
-                            if (startInput) startInput.value = '';
-                            // Attach recalc listeners once per form to avoid duplicate firing
-                            if (!form.dataset.recalcBound) {
-                                const recalc = () => recalcAddSessionStart(gameId);
-                                hInput?.addEventListener('input', recalc);
-                                mInput?.addEventListener('input', recalc);
-                                endInput?.addEventListener('input', () => {
-                                    const h = parseInt(hInput?.value || '0', 10) || 0;
-                                    const m = parseInt(mInput?.value || '0', 10) || 0;
-                                    if (h || m) recalcAddSessionStart(gameId);
-                                });
-                                form.dataset.recalcBound = '1';
-                            }
-                            expandedGames.add(gameId);
-                            const list = document.getElementById(`sessions-${gameId}`);
-                            if (list) list.classList.add('visible');
-                        }
-                    }
-                });
-            });
-
-            document.querySelectorAll('.cancel-add-session-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const gameId = e.currentTarget.getAttribute('data-game-id');
-                    const form = document.getElementById(`add-session-${gameId}`);
-                    if (form) form.style.display = 'none';
-                });
-            });
-
-            document.querySelectorAll('.confirm-add-session-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const gameId = e.currentTarget.getAttribute('data-game-id');
-                    const form = document.getElementById(`add-session-${gameId}`);
-                    if (!form) { alert('Add form not found'); return; }
-                    const startEl = form.querySelector('.add-start');
-                    const endEl = form.querySelector('.add-end');
-                    const startLocal = startEl?.value ?? '';
-                    const endLocal = endEl?.value ?? '';
-                    const startIso = fromLocalDatetimeValue(startLocal);
-                    const endIso = endLocal ? fromLocalDatetimeValue(endLocal) : null;
-                    if (!startIso) {
-                        alert('Start time is required');
-                        return;
-                    }
-                    try {
-                        await invoke('add_session', { gameId, start: startIso, end: endIso });
-                        form.style.display = 'none';
-                        const s = form.querySelector('.add-start'); if (s) s.value = '';
-                        const en = form.querySelector('.add-end'); if (en) en.value = '';
-                        const h = form.querySelector('.add-hours'); if (h) h.value = '';
-                        const m = form.querySelector('.add-minutes'); if (m) m.value = '';
-                        expandedGames.add(gameId);
-                        loadGames();
-                    } catch (err) {
-                        alert(`Failed to add session: ${escapeHtml(String(err))}`);
-                    }
+                    const id = e.currentTarget.getAttribute('data-id');
+                    const orphaned = e.currentTarget.getAttribute('data-orphaned') === '1';
+                    openSessions(id, orphaned);
                 });
             });
 
@@ -1387,6 +1416,31 @@
         toggleAddGameBtn.addEventListener('click', openAddGame);
         closeAddGameBtn.addEventListener('click', closeAddGame);
         cancelAddGameBtn.addEventListener('click', closeAddGame);
+        backBtn.addEventListener('click', goBackToGames);
+        toggleAddSessionBtn.addEventListener('click', () => {
+            if (sessionsAddForm.classList.contains('hidden')) openSessionsAddForm();
+            else {
+                sessionsAddOpen = false;
+                sessionsAddForm.classList.add('hidden');
+            }
+        });
+        confirmAddSessionBtn.addEventListener('click', confirmSessionsAdd);
+        cancelAddSessionBtn.addEventListener('click', () => {
+            sessionsAddOpen = false;
+            sessionsAddForm.classList.add('hidden');
+        });
+        deleteOrphanedPageBtn.addEventListener('click', async () => {
+            const id = view.gameId;
+            if (confirm(`Are you sure you want to delete ALL sessions for "${id}"? This cannot be undone.`)) {
+                try {
+                    await invoke('remove_orphaned_session', { gameId: id });
+                    goBackToGames();
+                    loadGames();
+                } catch (err) {
+                    alert(`Failed to delete: ${err}`);
+                }
+            }
+        });
         refreshExeBtn.addEventListener('click', async () => {
             await loadRunningProcesses();
             showAutocomplete(execInput, execAutocompleteList);
@@ -1413,16 +1467,15 @@
         // loses focus (reported bug when editing a game title).
         function isEditing() {
             if (editingGameId !== null || editingSessionKey !== null) return true;
-            // Any add-session form visible counts as editing (so you can use it)
-            const anyAddOpen = Array.from(document.querySelectorAll('.add-session-section')).some(el => el.style.display !== 'none' && el.offsetParent !== null);
-            if (anyAddOpen) return true;
+            // Sessions-page add form open counts as editing (so you can use it)
+            if (sessionsAddOpen && view.name === 'sessions') return true;
             const a = document.activeElement;
             if (!a) return false;
             if (a.id === 'game-name' || a.id === 'game-exec') return true;
             if (a.classList.contains('edit-name') || a.classList.contains('edit-exec')) return true;
             if (a.classList.contains('edit-start') || a.classList.contains('edit-end')) return true;
             if (a.classList.contains('add-start') || a.classList.contains('add-end') || a.classList.contains('add-hours') || a.classList.contains('add-minutes')) return true;
-            if (a.closest && (a.closest('.game-edit-form') || a.closest('.session-edit-form') || a.closest('#add-game-section') || a.closest('.add-session-section'))) return true;
+            if (a.closest && (a.closest('.game-edit-form') || a.closest('.session-edit-form') || a.closest('#add-game-section') || a.closest('#sessions-add-form'))) return true;
             return false;
         }
 
