@@ -14,8 +14,10 @@
             {
                 "label": "main",
                 "title": "Game Time Tracker - Management",
-                "width": 600,
-                "height": 500,
+                "width": 700,
+                "height": 650,
+                "minWidth": 500,
+                "minHeight": 400,
                 "visible": false,
                 "center": true
             }

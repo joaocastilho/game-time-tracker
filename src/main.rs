@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(all(not(debug_assertions), not(test)), windows_subsystem = "windows")]
 
 pub mod config;
 pub mod icon;
@@ -19,9 +19,28 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
-    tray::{TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        // `show()` alone is a no-op while the window is minimized to the
+        // taskbar, so restore it first. Order: show (un-hide) -> unminimize
+        // (restore) -> focus (bring to front).
+        if let Err(e) = window.show() {
+            log::warn!("Failed to show main window: {}", e);
+        }
+        if let Err(e) = window.unminimize() {
+            log::warn!("Failed to unminimize main window: {}", e);
+        }
+        if let Err(e) = window.set_focus() {
+            log::warn!("Failed to focus main window: {}", e);
+        }
+    } else {
+        log::warn!("Main window not found when trying to show it");
+    }
+}
 
 fn normalize_windows_path(path: &Path) -> String {
     let path_str = path.to_string_lossy();
@@ -31,6 +50,24 @@ fn normalize_windows_path(path: &Path) -> String {
         path_str.to_string()
     }
 }
+
+/// Release builds run with `windows_subsystem`, so there is no console and
+/// `println!` output from `install`/`uninstall` goes nowhere. Reattach to the
+/// parent console (e.g. PowerShell/CMD) so CLI feedback is visible.
+#[cfg(windows)]
+fn attach_parent_console() {
+    const ATTACH_PARENT_PROCESS: u32 = 0xFFFF_FFFF;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn AttachConsole(dwProcessId: u32) -> i32;
+    }
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_parent_console() {}
 
 use models::{Game, Session, State};
 use tracker::AppTracker;
@@ -150,7 +187,7 @@ fn add_game(name: String, executable: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_sessions() -> Result<std::collections::HashMap<String, Vec<Session>>, String> {
+fn get_orphaned_sessions() -> Result<std::collections::HashMap<String, Vec<Session>>, String> {
     let dir = config::data_dir();
     let sessions: std::collections::HashMap<String, Vec<Session>> =
         match store::load(dir.join("sessions.json")) {
@@ -465,7 +502,9 @@ fn decode_registry_path_bytes(bytes: &[u8]) -> String {
     // REG_SZ / REG_EXPAND_SZ are UTF-16LE with trailing 0x00 0x00.
     // Decode as UTF-16LE, handling odd length gracefully.
     let wide: Vec<u16> = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     let mut s = String::from_utf16_lossy(&wide);
@@ -684,12 +723,14 @@ fn main() {
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Install) => {
+            attach_parent_console();
             if let Err(e) = install_logic(false) {
                 error!("Installation failed: {}", e);
             }
             return;
         }
         Some(Commands::Uninstall) => {
+            attach_parent_console();
             if let Err(e) = uninstall_logic() {
                 error!("Uninstallation failed: {}", e);
             }
@@ -708,10 +749,7 @@ fn main() {
 
     let tauri_app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = app.get_webview_window("main").map(|w| {
-                let _ = w.show();
-                let _ = w.set_focus();
-            });
+            show_main_window(app);
         }))
         .setup(move |app| {
             // Setup system tray menu
@@ -735,23 +773,28 @@ fn main() {
 
             let tray = TrayIconBuilder::new()
                 .menu(&menu)
-                .tooltip("Game Time Tracker")
+                .tooltip("Game Time Tracker (0 active)")
                 .icon(tray_icon)
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::DoubleClick { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } => {
+                        show_main_window(tray.app_handle());
                     }
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } => {
+                        show_main_window(tray.app_handle());
+                    }
+                    _ => {}
                 })
                 .on_menu_event(move |app_handle, event| {
                     if event.id() == "manage" {
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        show_main_window(app_handle);
                     } else if event.id() == "sessions" {
                         let _ = open::that(config::data_dir().join("sessions.json"));
                     } else if event.id() == "data" {
@@ -779,9 +822,9 @@ fn main() {
             let tray_handle = tray.clone();
             let should_stop_tooltip = should_stop.clone();
             std::thread::spawn(move || {
-                let mut last = 0;
+                let mut last = usize::MAX;
                 loop {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                     if should_stop_tooltip.load(Ordering::SeqCst) {
                         break;
                     }
@@ -800,7 +843,7 @@ fn main() {
             get_ui_data,
             add_game,
             remove_game,
-            get_sessions,
+            get_orphaned_sessions,
             remove_orphaned_session,
             get_running_processes,
             update_game,

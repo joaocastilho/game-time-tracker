@@ -11,6 +11,11 @@ fn strip_exe(name: &str) -> &str {
     name.strip_suffix(".exe").unwrap_or(name)
 }
 
+/// Normalize an executable name for comparison: lowercase + strip `.exe`.
+pub(crate) fn normalize_exe(name: &str) -> String {
+    strip_exe(&name.to_lowercase()).to_string()
+}
+
 impl ProcessMonitor {
     pub fn new() -> Self {
         Self { sys: System::new() }
@@ -34,22 +39,31 @@ impl ProcessMonitor {
 
     /// Check without refreshing – use after `refresh()` for batched checks.
     pub fn is_running_cached(&self, executable_name: &str) -> bool {
-        let target_lower = executable_name.to_lowercase();
-        let target = strip_exe(&target_lower);
+        let target = normalize_exe(executable_name);
 
         for process in self.sys.processes().values() {
-            // Avoid per-process allocation by comparing case-insensitively via
-            // lowercased target vs lowercased name stripped.
             if let Some(name) = process.name().to_str() {
-                // Fast path: compare lengths after stripping to avoid extra allocation
-                // when possible, but still need lowercasing for correctness.
-                let name_lower = name.to_lowercase();
-                if strip_exe(&name_lower) == target {
+                if normalize_exe(name) == target {
                     return true;
                 }
             }
         }
         false
+    }
+
+    /// Build the set of normalized running executable names once per tick.
+    /// Use this for batched checks: O(P) to build, then O(1) per game,
+    /// instead of O(G*P) when calling `is_running_cached` per game.
+    pub fn running_normalized(&self) -> std::collections::HashSet<String> {
+        let mut set = std::collections::HashSet::with_capacity(self.sys.processes().len());
+        for process in self.sys.processes().values() {
+            if let Some(name) = process.name().to_str() {
+                if !name.is_empty() {
+                    set.insert(normalize_exe(name));
+                }
+            }
+        }
+        set
     }
 
     fn normalize_for_filter(path: &std::path::Path) -> String {
@@ -157,6 +171,29 @@ mod tests {
         assert_eq!(strip_exe("some.game.exe"), "some.game");
         assert_eq!(strip_exe("noextension"), "noextension");
         assert_eq!(strip_exe(""), "");
+    }
+
+    #[test]
+    fn test_normalize_exe_is_case_insensitive_and_strips_suffix() {
+        assert_eq!(normalize_exe("EXPLORER.EXE"), "explorer");
+        assert_eq!(normalize_exe("explorer.exe"), "explorer");
+        assert_eq!(normalize_exe("explorer"), "explorer");
+        assert_eq!(normalize_exe("Game.EXE"), "game");
+    }
+
+    #[test]
+    fn test_running_normalized_agrees_with_is_running_cached() {
+        let mut monitor = ProcessMonitor::new();
+        monitor.refresh();
+        let set = monitor.running_normalized();
+        // A name that is definitely running (current test binary on Windows
+        // ends with .exe; fall back to a bogus name otherwise).
+        let bogus = "this_process_definitely_does_not_exist_12345.exe";
+        assert_eq!(
+            set.contains(&normalize_exe(bogus)),
+            monitor.is_running_cached(bogus)
+        );
+        assert!(!set.contains(&normalize_exe(bogus)));
     }
 
     #[test]

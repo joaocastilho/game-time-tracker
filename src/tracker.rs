@@ -168,8 +168,9 @@ impl AppTracker {
             }
 
             self.monitor.refresh();
+            let running = self.monitor.running_normalized();
             for game in &games {
-                let is_running = self.monitor.is_running_cached(&game.executable);
+                let is_running = running.contains(&crate::process::normalize_exe(&game.executable));
                 let game_id = game.id.as_str();
 
                 let is_active = state.active_sessions.contains_key(game_id);

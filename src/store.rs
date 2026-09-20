@@ -72,40 +72,11 @@ pub fn save<T: Serialize, P: AsRef<Path>>(data: &T, path: P) -> Result<(), Store
         return Err(e.into());
     }
 
-    let result = std::fs::rename(&tmp_path, path);
-
-    if let Err(e) = result {
-        let is_cross_device = e.kind() == std::io::ErrorKind::CrossesDevices;
-
-        if is_cross_device {
-            // Copy to a second temp in the destination directory then atomic
-            // rename, so a crash mid-copy does not truncate the original file.
-            let mut tmp2 = path.to_path_buf();
-            let nanos2 = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            tmp2.set_file_name(format!(
-                "{}.tmp2.{}-{}-{:?}",
-                file_name,
-                std::process::id(),
-                nanos2,
-                std::thread::current().id()
-            ));
-            std::fs::copy(&tmp_path, &tmp2)?;
-            if let Ok(f) = std::fs::File::open(&tmp2) {
-                let _ = f.sync_all();
-            }
-            let res2 = std::fs::rename(&tmp2, path);
-            let _ = std::fs::remove_file(&tmp_path);
-            if let Err(e2) = res2 {
-                let _ = std::fs::remove_file(&tmp2);
-                return Err(e2.into());
-            }
-        } else {
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(e.into());
-        }
+    // Temp file lives in the same directory as the destination, so `rename`
+    // is atomic and always on the same filesystem (no cross-device case).
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(e.into());
     }
 
     Ok(())

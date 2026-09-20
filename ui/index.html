@@ -622,6 +622,47 @@
             } catch {}
         })();
 
+        // Auto-grow the window so the full content is visible without manual
+        // resizing. Only grows (never shrinks) and is capped at ~90% of the
+        // available screen. Skipped while editing to avoid moving the window
+        // under the user.
+        let fitPending = false;
+        async function fitWindowToContent() {
+            if (fitPending) return;
+            if (typeof isEditing === 'function' && isEditing()) return;
+            fitPending = true;
+            try {
+                await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+                const list = document.getElementById('game-list');
+                if (!list) return;
+                const extraY = Math.max(0, list.scrollHeight - list.clientHeight);
+                const extraX = Math.max(0, document.body.scrollWidth - document.body.clientWidth);
+                if (extraY < 24 && extraX < 24) return;
+                const availW = (window.screen && window.screen.availWidth) || 1280;
+                const availH = (window.screen && window.screen.availHeight) || 900;
+                const maxW = Math.floor(availW * 0.9);
+                const maxH = Math.floor(availH * 0.9);
+                const newW = Math.min(Math.ceil(window.innerWidth + extraX + 20), maxW);
+                const newH = Math.min(Math.ceil(window.innerHeight + extraY + 20), maxH);
+                if (newW <= window.innerWidth + 2 && newH <= window.innerHeight + 2) return;
+                if (window.__TAURI__?.window) {
+                    try {
+                        const win = window.__TAURI__.window.getCurrentWindow();
+                        const LogicalSize = window.__TAURI__.window.LogicalSize || window.__TAURI__.dpi?.LogicalSize;
+                        if (LogicalSize) {
+                            await win.setSize(new LogicalSize(newW, newH));
+                        } else {
+                            await win.setSize({ width: newW, height: newH });
+                        }
+                        return;
+                    } catch {}
+                }
+                try { window.resizeTo(newW, newH); } catch {}
+            } finally {
+                fitPending = false;
+            }
+        }
+
         function formatDuration(totalSecs) {
             const hours = Math.floor(totalSecs / 3600);
             const minutes = Math.floor((totalSecs % 3600) / 60);
@@ -664,6 +705,7 @@
             nameInput.focus();
             // Refresh list when opening so dropdown is fresh
             loadRunningProcesses();
+            fitWindowToContent();
         }
 
         function closeAddGame() {
@@ -676,7 +718,7 @@
         async function loadGames() {
             try {
                 const data = await invoke('get_ui_data');
-                const orphaned = await invoke('get_sessions');
+                const orphaned = await invoke('get_orphaned_sessions');
                 renderGames(data.games, data.sessions, data.state, orphaned);
             } catch (e) {
                 console.error('Failed to load games:', e);
@@ -1017,6 +1059,7 @@
             // Do not auto-expand sessions when editing – user must click Show Sessions / Add Session
 
             attachGameEvents();
+            fitWindowToContent();
         }
 
         function attachGameEvents() {
@@ -1396,12 +1439,28 @@
                 clearInterval(refreshInterval);
             } else {
                 if (!isEditing()) loadGames();
+                else fitWindowToContent();
                 refreshInterval = setInterval(() => {
                     if (isEditing()) return;
                     loadGames();
                 }, 1000);
             }
         });
+
+        // Refit when the window is restored from tray/minimized.
+        window.addEventListener('focus', () => {
+            fitWindowToContent();
+        });
+        try {
+            if (window.__TAURI__?.window) {
+                const win = window.__TAURI__.window.getCurrentWindow();
+                if (typeof win.onFocusChanged === 'function') {
+                    win.onFocusChanged(({ payload: focused }) => {
+                        if (focused) fitWindowToContent();
+                    });
+                }
+            }
+        } catch {}
         
         window.addEventListener('unload', () => {
             clearInterval(refreshInterval);
